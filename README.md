@@ -1,6 +1,6 @@
 # Literature Review Search System
 
-A Python-based automated literature review tool that uses citation network analysis and keyword filtering to identify relevant publications from seed papers via the Scopus API.
+A Python-based automated literature review tool that uses citation network analysis and keyword filtering to identify relevant publications from seed papers. Supports both **Scopus API** and **CrossRef API**.
 
 ## Overview
 
@@ -10,14 +10,29 @@ This system implements a multi-stage filtering approach to expand a small set of
 2. **Keyword Extraction** - RAKE (Rapid Automatic Keyword Extraction) from abstracts
 3. **Topic Modeling** - Optional HDP (Hierarchical Dirichlet Process) based filtering
 
+## Data Sources
+
+### Scopus API
+- **Access:** Requires API key and institutional subscription
+- **Coverage:** Comprehensive citation data including full citing works
+- **Best for:** Complete citation network analysis
+- **Sign up:** https://dev.elsevier.com/
+
+### CrossRef API
+- **Access:** Free and open, no API key required
+- **Coverage:** Full reference lists, citation counts (full citing works requires membership)
+- **Best for:** Reference-based analysis, open science projects
+- **Documentation:** https://www.crossref.org/documentation/retrieve-metadata/rest-api/
+
 ## Requirements
 
 1. **Python 3.9+** (updated from Python 2)
-2. **Scopus API Key** - Required for downloading citation data
-   - Sign up at: https://dev.elsevier.com/
-   - Requires institutional access or API subscription
+2. **API Access:**
+   - **Scopus API Key** (optional) - For complete citation networks
+   - **CrossRef mailto** (optional) - For faster API access (polite pool)
 3. **Python Dependencies:**
    - lxml
+   - python-dotenv
    - rake-nltk
    - (Optional) HDP binary and R for topic modeling
 
@@ -196,7 +211,79 @@ Extends `run.py` with HDP topic modeling (incomplete implementation).
 
 **Status:** Requires external HDP tools and is not fully functional.
 
+### CrossRef Module
+
+#### `crossref_publication.py` - CrossRef Data Model
+
+Similar to ScopusPublication but uses DOI identifiers and the free CrossRef API.
+
+**Key Features:**
+- No API key required (free and open access)
+- Downloads publication metadata, references, and abstracts
+- Uses DOI as primary identifier
+- Supports "polite pool" for faster API access (with email)
+- Built-in search by title or author
+
+**Properties:**
+- `doi` - Digital Object Identifier
+- `references` - Publications this paper cites (full list available)
+- `citation_count` - Number of citations (count only, not full list)
+- `abstract` - Abstract text
+- `pub_year` - Publication year
+- `title` - Publication title
+
+**Limitations:**
+- Full list of citing works requires CrossRef Cited-by membership
+- Citation counts available, but not citing paper details
+- Consider integrating with OpenCitations for free citation data
+
+**Search Functions:**
+```python
+# Search by title
+results = CrossRefPublication.search_by_title("machine learning", data_folder)
+
+# Search by author
+results = CrossRefPublication.search_by_author("Jane Smith", data_folder, max_results=20)
+
+# Get publication by DOI
+pub = CrossRefPublication(data_folder, "10.1037/0003-066X.59.1.29")
+```
+
+#### `run_crossref.py` - CrossRef Pipeline
+
+Basic workflow using CrossRef API for citation network expansion.
+
+**Configuration:**
+```python
+shared = 0.10                # Co-citation threshold (10%)
+min_year = 2010              # Minimum year
+max_year = 2020              # Maximum year
+review = 'crossref-review'   # Review identifier (folder name)
+studies_folder = 'data/included-studies'
+output_folder = 'data/crossref-download'
+```
+
+**Input Format (`included.csv`):**
+```csv
+Title,DOI
+"Paper Title 1","10.1037/0003-066X.59.1.29"
+"Paper Title 2","10.1234/example.doi"
+```
+
+**Workflow:**
+1. Load seed papers from `data/included-studies/{review}/included.csv`
+2. For each seed, create CrossRefPublication object (downloads metadata)
+3. Extract references (works cited)
+4. Filter by year range
+5. Compute strong citation relationships based on references
+
+**Output:**
+- Cached metadata in `data/crossref-download/{doi}/`
+- List of related DOIs in `data/crossref_related_dois.txt`
+
 ## Usage
+
+### Using Scopus API
 
 ### Step 1: Prepare Input Data
 
@@ -272,6 +359,74 @@ python3 run_topic_model.py
 **Filtered results (from run_keyword.py):**
 - `rake_results.csv` - Tab-separated file with filtered publications
 - Columns: SCOPUS_ID, TITLE, ABSTRACT
+
+---
+
+### Using CrossRef API
+
+#### Step 1: Prepare Input Data
+
+Create a CSV file with seed publications (using DOIs instead of EIDs):
+
+```bash
+mkdir -p data/included-studies/crossref-review
+```
+
+Create `data/included-studies/crossref-review/included.csv`:
+```csv
+Title,DOI
+"First Seed Paper","10.1037/0003-066X.59.1.29"
+"Second Seed Paper","10.1234/example.doi"
+```
+
+**Finding DOIs:**
+1. Search for paper on CrossRef.org, Google Scholar, or journal website
+2. DOI format: `10.xxxx/xxxxxx`
+3. Example: `10.1037/0003-066X.59.1.29`
+
+#### Step 2: Configure Environment Variables (Optional)
+
+For faster API access, add your email to `.env`:
+
+```bash
+# Edit .env file
+CROSSREF_MAILTO=your_email@example.com
+```
+
+This enables "polite pool" access with higher rate limits (50 req/sec vs 5 req/sec).
+
+**Note:** No API key required - CrossRef API is free and open!
+
+#### Step 3: Configure Run Script
+
+Edit `run_crossref.py`:
+```python
+review = 'crossref-review'  # Must match folder name
+studies_folder = 'data/included-studies'
+output_folder = 'data/crossref-download'
+shared = 0.10    # Co-citation threshold (10%)
+
+# Citation year range filter (inclusive)
+min_year = 2010
+max_year = 2020
+```
+
+#### Step 4: Run the Pipeline
+
+```bash
+python3 run_crossref.py
+```
+
+#### Step 5: Review Results
+
+**Cached metadata:**
+- Stored in `data/crossref-download/{doi}/metadata.json`
+- Each DOI has its own folder with JSON metadata
+
+**Related publications:**
+- `data/crossref_related_dois.txt` - List of related DOIs
+
+**Note:** CrossRef API provides full reference lists but only citation counts (not full citing works) without membership. For complete citation networks, use Scopus API or integrate with OpenCitations.
 
 ## Data Flow Diagram
 
