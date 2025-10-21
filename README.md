@@ -1,20 +1,478 @@
-Requirements:
-1. Python version 2
-2. Scopus API (with permission to collect citation information)
+# Literature Review Search System
 
-Steps:
+A Python-based automated literature review tool that uses citation network analysis and keyword filtering to identify relevant publications from seed papers via the Scopus API.
 
-1. Modify the following variables in run.py:
+## Overview
 
-    review = scopus_id_of_review_file
-    studies_folder = /path/to/folder/containing/included/studies
-    output_folder = /path/to/output/folder
+This system implements a multi-stage filtering approach to expand a small set of seed publications into a larger corpus of related papers for literature reviews. It combines:
+
+1. **Citation Network Analysis** - Direct references, citations, and co-citation relationships
+2. **Keyword Extraction** - RAKE (Rapid Automatic Keyword Extraction) from abstracts
+3. **Topic Modeling** - Optional HDP (Hierarchical Dirichlet Process) based filtering
+
+## Requirements
+
+1. **Python 3.9+** (updated from Python 2)
+2. **Scopus API Key** - Required for downloading citation data
+   - Sign up at: https://dev.elsevier.com/
+   - Requires institutional access or API subscription
+3. **Python Dependencies:**
+   - lxml
+   - rake-nltk
+   - (Optional) HDP binary and R for topic modeling
+
+## Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd lit-review-search
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set your Scopus API key in scopus_publication.py
+# Edit line 6: API_KEY = 'your_api_key_here'
+```
+
+## How It Works
+
+### System Architecture
+
+```
+Input Seed Papers → Citation Network Download → Network Expansion → Filtering → Results
+```
+
+### Core Components
+
+#### 1. ScopusPublication Class (`scopus_publication.py`)
+
+The central data model that handles all publication data and Scopus API interactions.
+
+**Key Features:**
+- Downloads and caches publication metadata, references, and citations from Scopus API
+- Extracts abstracts and publication years
+- Computes co-citation and co-citing relationships
+- Implements rate limiting (5-second delays between API calls)
+
+**Data Stored Per Publication:**
+```
+data/scopus-download/{eid}/
+├── references.xml              # Abstract and references from Scopus
+├── rake_keywords.txt           # Extracted keywords
+├── top_shared.txt              # Strong citation relationships
+└── citations/
+    ├── 1900-0.json
+    ├── 2018-5.json
+    └── ...
+```
+
+**Properties:**
+- `eid` - Scopus publication ID
+- `references` - Publications this paper cites
+- `citations` - Papers that cite this publication
+- `co_citing_counts` - Papers that cite the same references
+- `co_cited_counts` - Papers cited by the same citations
+- `abstract` - English abstract text
+- `pub_year` - Publication year
+
+#### 2. Citation Filtering (`citation_filtering.py`)
+
+Computes "strong citation relationships" based on citation network structure.
+
+**Algorithm:**
+```python
+For a seed paper S:
+
+Strong Citation Space includes:
+├── Direct References: Papers S cites
+├── Direct Citations: Papers that cite S
+├── Co-citing: Papers citing >= 10% of S's references
+│   (Papers discussing similar prior work)
+└── Co-cited: Papers cited by >= 10% of papers citing S
+    (Papers related to topics S discusses)
+```
+
+**Key Functions:**
+- `get_strong_co_citing(scopus_pub, shared)` - Find papers that cite many of the same references
+- `get_strong_co_cited(scopus_pub, shared)` - Find papers cited by many of the same papers
+- `get_strong_citation_relationship(scopus_pub, shared)` - Combine all strong relationships
+
+**Threshold Parameter:**
+- `shared = 0.10` means papers must share at least 10% of references/citations to be considered "strongly related"
+
+#### 3. Keyword Extraction (`keywords.py`)
+
+Extracts keywords from abstracts using RAKE algorithm.
+
+**Workflow:**
+1. Load publication abstract
+2. Apply RAKE to extract ranked keyword phrases
+3. Save keywords to `rake_keywords.txt`
+4. One keyword per line, ranked by importance
+
+#### 4. Topic Modeling (`topic_filtering.py`)
+
+Optional topic-based filtering using HDP (Hierarchical Dirichlet Process).
+
+**Note:** Requires external HDP binary and R script (not fully implemented).
+
+### Orchestration Scripts
+
+#### `run.py` - Main Citation-Based Pipeline
+
+Basic workflow using only citation network expansion.
+
+**Configuration:**
+```python
+shared = 0.10               # Co-citation threshold (10%)
+year = 2013                 # Filter citations before this year
+review = '84925226708'      # Review identifier (folder name)
+studies_folder = 'data/included-studies'
+output_folder = 'data/scopus-download'
+```
+
+**Workflow:**
+1. Load seed papers from `data/included-studies/{review}/included.csv`
+2. For each seed, create ScopusPublication object (downloads metadata)
+3. Filter citations by year
+4. Compute strong citation relationships for each seed
+
+**Input Format (`included.csv`):**
+```
+Title,EID
+"Paper Title 1",85012345678
+"Paper Title 2",85023456789
+```
+
+#### `run_keyword.py` - Citation + Keyword Filtering
+
+Extends `run.py` with keyword-based filtering.
+
+**Additional Steps:**
+5. Union all strong citation spaces from all seeds
+6. Load ScopusPublication for each related paper
+7. Extract RAKE keywords from seed papers (2-3 word phrases only)
+8. Filter related papers by keyword overlap with seeds
+9. Write results to `rake_results.csv`
+
+**Output Format (`rake_results.csv`):**
+```
+SCOPUS_ID    TITLE                      ABSTRACT
+85012345678  "Related Paper Title"      "Abstract text..."
+85023456789  "Another Paper"            "More abstract..."
+```
+
+#### `run_topic_model.py` - Citation + Topic Modeling
+
+Extends `run.py` with HDP topic modeling (incomplete implementation).
+
+**Additional Steps:**
+5. Run HDP topic modeling on related papers
+6. Cluster documents by topic
+7. Select relevant topic clusters
+
+**Status:** Requires external HDP tools and is not fully functional.
+
+## Usage
+
+### Step 1: Prepare Input Data
+
+Create a CSV file with seed publications:
+
+```bash
+mkdir -p data/included-studies/my-review
+```
+
+Create `data/included-studies/my-review/included.csv`:
+```csv
+Title,EID
+"First Seed Paper",85012345678
+"Second Seed Paper",85023456789
+```
+
+**Finding Scopus EIDs:**
+1. Search for paper on Scopus.com
+2. The EID is in the URL: `scopus.com/record/display.uri?eid=2-s2.0-85012345678`
+3. Use the numeric part only: `85012345678`
+
+### Step 2: Configure API Key
+
+Edit `scopus_publication.py`:
+```python
+API_KEY = 'your_scopus_api_key_here'
+```
+
+### Step 3: Configure Run Script
+
+Edit `run.py` (or `run_keyword.py`):
+```python
+review = 'my-review'  # Must match folder name in step 1
+studies_folder = 'data/included-studies'
+output_folder = 'data/scopus-download'
+shared = 0.10  # Co-citation threshold
+year = 2013    # Citation year filter
+```
+
+### Step 4: Run the Pipeline
+
+```bash
+# Basic citation network expansion
+python3 run.py
+
+# With keyword filtering (recommended)
+python3 run_keyword.py
+
+# With topic modeling (requires HDP tools)
+python3 run_topic_model.py
+```
+
+### Step 5: Review Results
+
+**Citation network data:**
+- Stored in `data/scopus-download/{eid}/`
+- Each publication has its own folder with XML and JSON files
+
+**Filtered results (from run_keyword.py):**
+- `rake_results.csv` - Tab-separated file with filtered publications
+- Columns: SCOPUS_ID, TITLE, ABSTRACT
+
+## Data Flow Diagram
+
+```
+┌─────────────────────────────────────────┐
+│ INPUT: included.csv                     │
+│ Format: Title,EID                       │
+└─────────────┬───────────────────────────┘
+              │
+              ↓
+┌─────────────────────────────────────────┐
+│ PHASE 1: Download Citation Networks     │
+│ • Query Scopus API for each seed        │
+│ • Download references.xml               │
+│ • Download citations (paginated JSON)   │
+│ • Cache all data locally                │
+└─────────────┬───────────────────────────┘
+              │
+              ↓
+┌─────────────────────────────────────────┐
+│ PHASE 2: Citation Filtering             │
+│ • Filter citations by year              │
+│ • Calculate co-citing relationships     │
+│ • Calculate co-cited relationships      │
+└─────────────┬───────────────────────────┘
+              │
+              ↓
+┌─────────────────────────────────────────┐
+│ PHASE 3: Strong Citation Relationships  │
+│ • Direct references                     │
+│ • Direct citations                      │
+│ • Strongly co-citing papers (≥10%)      │
+│ • Strongly co-cited papers (≥10%)       │
+└─────────────┬───────────────────────────┘
+              │
+              ↓ (Optional: run_keyword.py)
+┌─────────────────────────────────────────┐
+│ PHASE 4: Keyword Extraction             │
+│ • Extract RAKE keywords from abstracts  │
+│ • Filter to 2-3 word phrases            │
+└─────────────┬───────────────────────────┘
+              │
+              ↓
+┌─────────────────────────────────────────┐
+│ PHASE 5: Keyword-Based Filtering        │
+│ • Compare keywords of related papers    │
+│ • Keep papers with keyword overlap      │
+└─────────────┬───────────────────────────┘
+              │
+              ↓
+┌─────────────────────────────────────────┐
+│ OUTPUT: rake_results.csv                │
+│ Format: SCOPUS_ID<TAB>TITLE<TAB>ABSTRACT│
+└─────────────────────────────────────────┘
+```
+
+## Configuration Parameters
+
+### Citation Network Settings
+
+```python
+shared = 0.10  # Co-citation threshold
+               # 0.10 = papers must share 10% of references/citations
+               # Higher values = stricter filtering, fewer papers
+               # Lower values = more papers, potentially less related
+
+year = 2013    # Citation year filter
+               # Only include citations published before this year
+               # Useful for temporal filtering or excluding recent work
+```
+
+### File Paths
+
+```python
+review = '84925226708'  # Folder name for this literature review
+                        # Can be any identifier, not necessarily a Scopus ID
+
+studies_folder = 'data/included-studies'
+                # Contains {review}/included.csv with seed papers
+
+output_folder = 'data/scopus-download'
+               # Cache folder for all downloaded Scopus data
+```
+
+## API Rate Limits and Caching
+
+### Scopus API Calls
+
+The system makes two types of Scopus API requests:
+
+1. **Abstract/Reference Retrieval:**
+   ```
+   GET https://api.elsevier.com/content/abstract/scopus_id/{eid}
+   Response: XML with abstract, metadata, and references
+   ```
+
+2. **Citation Search:**
+   ```
+   GET https://api.elsevier.com/content/search/scopus
+   Query: refeid(2-s2.0-{eid})
+   Response: JSON with citing papers
+   ```
+
+### Rate Limiting
+
+- **Built-in delay:** 5 seconds between requests
+- **Scopus limits:** Check your API subscription for specific limits
+  - Typical institutional access: 5,000-10,000 requests/week
+
+### Caching Strategy
+
+All API responses are cached to disk:
+- **First run:** Downloads all data from Scopus API (slow)
+- **Subsequent runs:** Uses cached data (fast)
+- **Cache location:** `data/scopus-download/{eid}/`
+
+To re-download data for a specific publication, delete its folder.
+
+## Scaling Considerations
+
+### Citation Network Growth
+
+Starting with N seed papers can result in exponential expansion:
+
+```
+Seed Papers: 5
+↓
+Direct Citations + References: ~50-100 papers each = 250-500 papers
+↓
+Co-citing + Co-cited (10% threshold): ~500-2,000 papers
+↓
+With Keyword Filtering: ~100-500 papers
+```
+
+### API Request Estimates
+
+For N seed papers:
+- **Reference downloads:** N requests
+- **Citation downloads:** N × years × pages ≈ N × 20-100 requests
+- **Co-citation analysis:** May recursively download more papers
+
+**Example:** 5 seed papers could require 500-1,000 API requests.
+
+### Runtime Estimates
+
+- **Initial download:** 2-5 minutes per seed paper (depends on citations)
+- **Cached analysis:** 10-30 seconds per seed paper
+- **Total for 5 seeds:** 30-60 minutes first run, < 1 minute subsequent runs
+
+## Troubleshooting
+
+### API Key Issues
+
+**Error:** `Error getting reference file: {eid}`
+
+**Solutions:**
+1. Verify API key is set in `scopus_publication.py`
+2. Check API key has citation search permissions
+3. Verify institutional access to Scopus
+
+### Missing Data
+
+**Error:** `KeyError: 'entry'` or empty results
+
+**Possible Causes:**
+1. Publication has no citations
+2. Publication not indexed in Scopus
+3. API rate limit exceeded
+
+**Solution:** Check the cached XML/JSON files in `data/scopus-download/{eid}/`
+
+### Encoding Errors (Python 2 to 3 Migration)
+
+**Error:** `TypeError: a bytes-like object is required, not 'str'`
+
+**Solution:** The codebase has been updated for Python 3. Ensure you're using Python 3.9+:
+```bash
+python3 --version
+python3 run.py  # Not python run.py
+```
+
+### Empty Keyword Results
+
+**Issue:** `rake_keywords.txt` is empty
+
+**Causes:**
+1. Abstract is empty or not in English
+2. RAKE failed to extract meaningful phrases
+
+**Solution:** Check the abstract in `references.xml` - some papers may not have abstracts in Scopus.
+
+## File Structure Reference
+
+```
+lit-review-search/
+├── README.md                      # This file
+├── requirements.txt               # Python dependencies
+│
+├── scopus_publication.py          # Core data model and API interactions
+├── citation_filtering.py          # Citation network analysis
+├── keywords.py                    # RAKE keyword extraction
+├── topic_filtering.py             # HDP topic modeling
+│
+├── run.py                         # Main pipeline (citation only)
+├── run_keyword.py                 # Pipeline with keyword filtering
+├── run_topic_model.py             # Pipeline with topic modeling
+│
+└── data/
+    ├── included-studies/
+    │   └── {review_id}/
+    │       └── included.csv       # INPUT: Seed papers
+    │
+    └── scopus-download/
+        └── {eid}/
+            ├── references.xml     # Cached Scopus abstract + references
+            ├── rake_keywords.txt  # Extracted keywords
+            ├── top_shared.txt     # Strong citation relationships
+            └── citations/
+                ├── 1900-0.json    # Cached citation search results
+                └── ...
+```
+
+## Citation
+
+This implementation is based on the following paper:
+
+**Testing a Citation and Text-Based Framework for Retrieving Publications for Literature Reviews**
+
+Maria Janina Sarol, Linxi Liu, and Jodi Schneider
+
+Proceedings of the 7th International Workshop on Bibliometric-enhanced Information Retrieval (2018)
 
 Link to full paper: http://ceur-ws.org/Vol-2080/paper3.pdf
 
-BibTex Citation
+### BibTeX Citation
 
-```
+```bibtex
 @inproceedings{SarolLS18,
   author    = {Maria Janina Sarol and
                Linxi Liu and
@@ -27,3 +485,18 @@ BibTex Citation
   url       = {http://ceur-ws.org/Vol-2080/paper3.pdf}
 }
 ```
+
+## License
+
+[Add your license information here]
+
+## Contributing
+
+[Add contribution guidelines here]
+
+## Support
+
+For issues and questions:
+- Check the Troubleshooting section above
+- Review the paper: http://ceur-ws.org/Vol-2080/paper3.pdf
+- [Add contact information or issue tracker link]

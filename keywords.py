@@ -10,8 +10,9 @@ studies_folder = ''
 for file in os.listdir(output_folder):
     if file != '.DS_Store':
         pub = ScopusPublication(output_folder, file)
-        
-        pub.abstract = pub.abstract.encode('ascii', 'ignore') 
+
+        # In Python 3, encode returns bytes, so we decode it back to string
+        pub.abstract = pub.abstract.encode('ascii', 'ignore').decode('ascii')
         if pub.abstract != '':
             keywords_file = os.path.join(output_folder, file, 'rake_keywords.txt')
             

@@ -1,7 +1,7 @@
 from lxml import etree
 from datetime import datetime
 from collections import defaultdict
-import os, json, urllib2, time, xml.etree.ElementTree as ET
+import os, json, urllib.request, urllib.error, urllib.parse, time, xml.etree.ElementTree as ET
 
 API_KEY = ''
 CURRENT_YEAR = 2018
@@ -29,7 +29,7 @@ class ScopusPublication():
 
     @property
     def co_citing_eids(self):
-        return self.co_citing_counts_.keys()
+        return list(self.co_citing_counts_.keys())
 
     @property
     def co_citing_counts(self):
@@ -37,7 +37,7 @@ class ScopusPublication():
 
     @property
     def co_cited_eids(self):
-        return self.co_cited_counts_.keys()
+        return list(self.co_cited_counts_.keys())
 
     @property
     def co_cited_counts(self):
@@ -110,13 +110,13 @@ class ScopusPublication():
             abstract_url = 'https://api.elsevier.com/content/abstract/scopus_id/{}?apiKey={}'.format(self.eid_, API_KEY)
             
             #change ET to lxml
-            xml_file = urllib2.urlopen(abstract_url, timeout = 1000)
+            xml_file = urllib.request.urlopen(abstract_url, timeout = 1000)
             data = xml_file.read()
             xml_file.close()
             xml = ET.fromstring(data)
 
             # save xml data to file
-            with open(os.path.join(reference_file), 'w') as f:
+            with open(os.path.join(reference_file), 'wb') as f:
                 f.write(ET.tostring(xml))
 
         except Exception as e:
@@ -184,7 +184,7 @@ class ScopusPublication():
             while year <= current_year:
                 page_count = 0
                 while True:
-                    json_file = urllib2.urlopen('https://api.elsevier.com/content/search/scopus?' + \
+                    json_file = urllib.request.urlopen('https://api.elsevier.com/content/search/scopus?' + \
                         'query=refeid(2-s2.0-{})&apiKey={}&date={}&count=200&start={}'.format(self.eid_, API_KEY, year, page_count * 200))
                     data = json_file.read()
 
@@ -201,7 +201,7 @@ class ScopusPublication():
                     count_results += len(json_data['search-results']['entry'])
 
                     #save citations to file
-                    with open(os.path.join(self.citations_folder_, str(year) + '-' + str(page_count) + '.json'),'w') as f:
+                    with open(os.path.join(self.citations_folder_, str(year) + '-' + str(page_count) + '.json'),'wb') as f:
                         f.write(data)
 
                     page_count += 1
@@ -210,8 +210,8 @@ class ScopusPublication():
                         break
 
                 year += 1
-        except urllib2.HTTPError:
-            print('Error getting citations: ' + self.eid)
+        except urllib.error.HTTPError:
+            print('Error getting citations: ' + self.eid_)
 
         # second delay for each request to Scopus
         time.sleep(5)

@@ -12,7 +12,7 @@ def format_lda_c(str_input):
     counts = Counter(str_input)
     lda_c_string = ''
 
-    for word, count in counts.items():                   
+    for word, count in list(counts.items()):                   
         if word not in words:
             words.append(word)
             counter += 1
