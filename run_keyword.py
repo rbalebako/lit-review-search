@@ -3,7 +3,8 @@ from scopus_publication import ScopusPublication
 
 def main():
     shared = 0.10
-    year = 2018
+    min_year = 2010  # Minimum year (inclusive), use None for no lower bound
+    max_year = 2020  # Maximum year (inclusive), use None for no upper bound
 
     review = 'seeds'
     studies_folder = ''
@@ -20,7 +21,7 @@ def main():
     scopus_pubs = {}
     for seed in seeds:
         scopus_pubs[seed] = ScopusPublication(data_folder, seed)
-        scopus_pubs[seed].filter_citations(year)
+        scopus_pubs[seed].filter_citations(min_year=min_year, max_year=max_year)
         scopus_pubs[seed].get_co_cited_eids()
         
 

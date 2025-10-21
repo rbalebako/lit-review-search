@@ -29,11 +29,33 @@ git clone <repository-url>
 cd lit-review-search
 
 # Install dependencies
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 
-# Set your Scopus API key in scopus_publication.py
-# Edit line 6: API_KEY = 'your_api_key_here'
+# Configure environment variables
+cp .env.example .env
+# Edit .env and add your Scopus API key
 ```
+
+### Environment Configuration
+
+Create a `.env` file in the project root with your Scopus API key:
+
+```bash
+# Copy the example file
+cp .env.example .env
+```
+
+Edit `.env` and add your credentials:
+
+```ini
+# Scopus API Configuration
+SCOPUS_API_KEY=your_actual_api_key_here
+
+# Optional: Current year for citation filtering (defaults to current year)
+CURRENT_YEAR=2018
+```
+
+**Security Note:** The `.env` file is automatically ignored by git and will never be committed to your repository.
 
 ## How It Works
 
@@ -196,11 +218,16 @@ Title,EID
 2. The EID is in the URL: `scopus.com/record/display.uri?eid=2-s2.0-85012345678`
 3. Use the numeric part only: `85012345678`
 
-### Step 2: Configure API Key
+### Step 2: Configure Environment Variables
 
-Edit `scopus_publication.py`:
-```python
-API_KEY = 'your_scopus_api_key_here'
+Make sure you've created your `.env` file with your Scopus API key (see Installation section above):
+
+```bash
+# Copy the example file if you haven't already
+cp .env.example .env
+
+# Edit the .env file with your actual API key
+# SCOPUS_API_KEY=your_actual_api_key_here
 ```
 
 ### Step 3: Configure Run Script
@@ -210,8 +237,17 @@ Edit `run.py` (or `run_keyword.py`):
 review = 'my-review'  # Must match folder name in step 1
 studies_folder = 'data/included-studies'
 output_folder = 'data/scopus-download'
-shared = 0.10  # Co-citation threshold
-year = 2013    # Citation year filter
+shared = 0.10    # Co-citation threshold (10%)
+
+# Citation year range filter (inclusive)
+min_year = 2010  # Minimum year, use None for no lower bound
+max_year = 2020  # Maximum year, use None for no upper bound
+
+# Examples:
+# min_year = 2010, max_year = 2020  # Only citations from 2010-2020
+# min_year = None, max_year = 2015  # All citations up to 2015
+# min_year = 2010, max_year = None  # All citations from 2010 onwards
+# min_year = None, max_year = None  # No year filtering
 ```
 
 ### Step 4: Run the Pipeline
@@ -302,9 +338,20 @@ shared = 0.10  # Co-citation threshold
                # Higher values = stricter filtering, fewer papers
                # Lower values = more papers, potentially less related
 
-year = 2013    # Citation year filter
-               # Only include citations published before this year
-               # Useful for temporal filtering or excluding recent work
+# Citation year range filter (both bounds are inclusive)
+min_year = 2010  # Minimum publication year
+                 # Set to None for no lower bound
+                 # Example: 2010 includes papers from 2010 onwards
+
+max_year = 2020  # Maximum publication year
+                 # Set to None for no upper bound
+                 # Example: 2020 includes papers up to and including 2020
+
+# Common year range configurations:
+# min_year = 2010, max_year = 2020  → Only 2010-2020 (inclusive)
+# min_year = None, max_year = 2015  → All papers up to 2015
+# min_year = 2010, max_year = None  → Papers from 2010 onwards
+# min_year = None, max_year = None  → No temporal filtering
 ```
 
 ### File Paths
@@ -389,12 +436,21 @@ For N seed papers:
 
 ### API Key Issues
 
-**Error:** `Error getting reference file: {eid}`
+**Error:** `ValueError: SCOPUS_API_KEY not found in environment variables`
 
 **Solutions:**
-1. Verify API key is set in `scopus_publication.py`
-2. Check API key has citation search permissions
+1. Make sure you've created a `.env` file in the project root
+2. Copy `.env.example` to `.env`: `cp .env.example .env`
+3. Edit `.env` and add your actual API key
+4. Ensure the `.env` file is in the same directory as the Python scripts
+
+**Error:** `Error getting reference file: {eid}` or `401 Unauthorized`
+
+**Solutions:**
+1. Verify your API key is correct in the `.env` file
+2. Check API key has citation search permissions on the Elsevier Developer Portal
 3. Verify institutional access to Scopus
+4. Check if API key has expired or reached rate limits
 
 ### Missing Data
 

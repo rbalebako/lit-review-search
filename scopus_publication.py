@@ -2,9 +2,22 @@ from lxml import etree
 from datetime import datetime
 from collections import defaultdict
 import os, json, urllib.request, urllib.error, urllib.parse, time, xml.etree.ElementTree as ET
+from dotenv import load_dotenv
 
-API_KEY = ''
-CURRENT_YEAR = 2018
+# Load environment variables from .env file
+load_dotenv()
+
+# Get API key from environment variable
+API_KEY = os.getenv('SCOPUS_API_KEY', '')
+if not API_KEY:
+    raise ValueError(
+        "SCOPUS_API_KEY not found in environment variables. "
+        "Please create a .env file with your API key. "
+        "See .env.example for template."
+    )
+
+# Get current year from environment or use current year
+CURRENT_YEAR = int(os.getenv('CURRENT_YEAR', datetime.now().year))
 
 class ScopusPublication():
     @property
@@ -216,11 +229,38 @@ class ScopusPublication():
         # second delay for each request to Scopus
         time.sleep(5)
 
-    def filter_citations(self, year):
+    def filter_citations(self, min_year=None, max_year=None):
+        """
+        Filter citations by year range.
+
+        Args:
+            min_year (int, optional): Minimum publication year (inclusive).
+                                     If None, no lower bound is applied.
+            max_year (int, optional): Maximum publication year (inclusive).
+                                     If None, no upper bound is applied.
+
+        Examples:
+            filter_citations(min_year=2010, max_year=2020)  # 2010-2020 range
+            filter_citations(max_year=2015)                  # Up to 2015
+            filter_citations(min_year=2010)                  # From 2010 onwards
+        """
         filtered_citations = []
         for citation in self.citations_:
-            if citation['year'] <= year:
-                filtered_citations.append(citation)
+            cite_year = citation.get('year')
+
+            # Skip citations with no year information
+            if cite_year is None:
+                continue
+
+            # Apply min_year filter
+            if min_year is not None and cite_year < min_year:
+                continue
+
+            # Apply max_year filter
+            if max_year is not None and cite_year > max_year:
+                continue
+
+            filtered_citations.append(citation)
 
         self.citations_ = filtered_citations
         self.get_cociting_eids()

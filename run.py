@@ -78,11 +78,12 @@ def get_strong_citation_relationship(scopus_pub, shared):
 def main():
     """
     Main entry point: load included studies, build ScopusPublication objects,
-    filter citations by year, and compute strong citation relationships.
+    filter citations by year range, and compute strong citation relationships.
 
     Configuration values (can be modified here):
       - shared: threshold fraction for 'strong' co-citation/co-citing
-      - year: earliest year to include in citation filtering
+      - min_year: minimum publication year for citations (inclusive), None for no lower bound
+      - max_year: maximum publication year for citations (inclusive), None for no upper bound
       - review: review identifier used to locate included studies
       - studies_folder / output_folder: paths for inputs/outputs
 
@@ -90,7 +91,9 @@ def main():
         None
     """
     shared = 0.10
-    year = 2013
+    min_year = 2010  # Minimum year (inclusive)
+    max_year = 2020  # Maximum year (inclusive)
+    # Use None for no bound: min_year = None  or  max_year = None
 
     review = '84925226708'
     studies_folder = 'data/included-studies'
@@ -106,7 +109,7 @@ def main():
     scopus_pubs = {}
     for seed in seeds:
         scopus_pubs[seed] = ScopusPublication(output_folder, seed)
-        scopus_pubs[seed].filter_citations(year)
+        scopus_pubs[seed].filter_citations(min_year=min_year, max_year=max_year)
 
     print('Getting strong citation relationships..')
     for seed in seeds:
