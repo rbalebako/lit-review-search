@@ -1,6 +1,7 @@
 from datetime import datetime
 from collections import defaultdict
 import os, json, urllib.request, urllib.error, urllib.parse, time
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -11,6 +12,15 @@ CROSSREF_BASE_URL = 'https://api.crossref.org'
 MAILTO = os.getenv('CROSSREF_MAILTO', '')  # Email for polite pool access
 if MAILTO:
     print(f"Using CrossRef polite pool with email: {MAILTO}")
+
+# Get OpenCitations API key from environment variable
+API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
+if not API_KEY:
+    raise ValueError(
+        "OPENCITATIONS_API_KEY not found in environment variables. "
+        "Please create a .env file with your API key. "
+        "See .env.example for template."
+    )
 
 # Rate limiting: CrossRef allows 50 req/sec for polite pool, 5 req/sec otherwise
 RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
@@ -43,7 +53,7 @@ class CrossRefPublication():
         return len(self.citations_)
 
     @property
-    def co_citing_eids(self):
+    def co_citing_ids(self):
         return list(self.co_citing_counts_.keys())
 
     @property
@@ -250,7 +260,7 @@ class CrossRefPublication():
         self.citations_ = filtered_citations
         # Note: Co-citing calculation would happen here if we had citation data
 
-    def get_cociting_eids(self):
+    def get_cociting_ids(self):
         """
         Calculate co-citing relationships.
 
@@ -260,7 +270,7 @@ class CrossRefPublication():
         # Placeholder - would need citation data to implement
         pass
 
-    def get_co_cited_eids(self):
+    def get_co_cited_ids(self):
         """
         Calculate co-cited relationships.
 

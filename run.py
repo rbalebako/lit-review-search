@@ -1,47 +1,59 @@
 import sys, os, math
-from scopus_publication import ScopusPublication
 
-def get_strong_co_citing(scopus_pub, shared):
+# Prefer CrossRefPublication; fall back to ScopusPublication if CrossRef module not available
+USING_CROSSREF = False
+try:
+    from crossref_publication import CrossRefPublication as Publication
+    USING_CROSSREF = True
+    print("Defaulting to CrossRefPublication backend")
+except Exception:
+    try:
+        from scopus_publication import ScopusPublication as Publication
+        print("CrossRef backend not available — using ScopusPublication backend")
+    except Exception:
+        raise ImportError("Neither crossref_publication nor scopus_publication modules are importable")
+
+def get_strong_co_citing(publication, shared):
     """
     Return EIDs of publications that are strongly co-citing with the given publication.
 
     Args:
-        scopus_pub: ScopusPublication object whose co-citing counts are examined.
+        publication: Publication-like object whose co-citing counts are examined.
         shared: float fraction used to compute the minimum shared reference threshold.
 
     Returns:
         List of EID strings for publications with co-citing counts >= threshold.
     """
-    min_count = math.ceil(scopus_pub.reference_count * shared)
+    min_count = math.ceil(publication.reference_count * shared)
 
     eids = []
-    for eid, count in list(scopus_pub.co_citing_counts.items()):
+    for eid, count in list(publication.co_citing_counts.items()):
             if count >= min_count:
                 eids.append(eid)
 
     return eids
 
-def get_strong_co_cited(scopus_pub, shared):
+def get_strong_co_cited(publication, shared):
     """
     Return EIDs of publications that are strongly co-cited with the given publication.
 
     Args:
-        scopus_pub: ScopusPublication object whose co-cited counts are examined.
+        publication: Publication-like object whose co-cited counts are examined.
         shared: float fraction used to compute the minimum shared citation threshold.
 
     Returns:
         List of EID strings for publications with co-cited counts >= threshold.
     """
-    min_count = math.ceil(scopus_pub.citation_count * shared)
+    min_count = math.ceil(publication.citation_count * shared)
     
     eids = []
-    for eid, count in list(scopus_pub.co_cited_counts.items()):
+    for eid, count in list(publication.co_cited_counts.items()):
         if count >= min_count:
             eids.append(eid)
 
     return eids
 
-def get_strong_citation_relationship(scopus_pub, shared):
+def get_strong_citation_relationship(publication, shared):
     """
     Populate scopus_pub.strong_cit_pubs with EIDs representing strong citation relationships.
 
@@ -52,23 +64,23 @@ def get_strong_citation_relationship(scopus_pub, shared):
         (as computed by get_strong_co_citing and get_strong_co_cited).
 
     Args:
-        scopus_pub: ScopusPublication object to update.
+        publication: Publication-like object to update.
         shared: float fraction used by co-citing/co-cited threshold calculations.
 
     Returns:
         None (updates scopus_pub in place).
     """
-    scopus_pub.strong_cit_pubs = set()
+    publication.strong_cit_pubs = set()
 
-    for reference in scopus_pub.references_:
-        scopus_pub.strong_cit_pubs.add(reference['eid'])
+    for reference in publication.references_:
+        publication.strong_cit_pubs.add(reference.get('eid') or reference.get('doi'))
 
-    for citation in scopus_pub.citations_:
-        scopus_pub.strong_cit_pubs.add(citation['eid'])
+    for citation in publication.citations_:
+        publication.strong_cit_pubs.add(citation.get('eid') or citation.get('doi'))
 
     # ensure the results of co-citing/co-cited are added to the set
-    scopus_pub.strong_cit_pubs.update(get_strong_co_citing(scopus_pub, shared))
-    scopus_pub.strong_cit_pubs.update(get_strong_co_cited(scopus_pub, shared))
+    publication.strong_cit_pubs.update(get_strong_co_citing(publication, shared))
+    publication.strong_cit_pubs.update(get_strong_co_cited(publication, shared))
 
     # with open(os.path.join('data', eid, 'top_shared_' + str(top) + '_' + citation_type + '.txt'), 'w') as o:
     #     for top_pub in top_pubs:
@@ -77,7 +89,7 @@ def get_strong_citation_relationship(scopus_pub, shared):
 
 def main():
     """
-    Main entry point: load included studies, build ScopusPublication objects,
+    Main entry point: load included studies, build Publication objects,
     filter citations by year range, and compute strong citation relationships.
 
     Configuration values (can be modified here):
@@ -91,11 +103,11 @@ def main():
         None
     """
     shared = 0.10
-    min_year = 2010  # Minimum year (inclusive)
-    max_year = 2020  # Maximum year (inclusive)
+    min_year = 2022  # Minimum year (inclusive)
+    max_year = 2025  # Maximum year (inclusive)
     # Use None for no bound: min_year = None  or  max_year = None
 
-    review = '84925226708'
+    review = 'firsttry'
     studies_folder = 'data/included-studies'
     output_folder = 'data/scopus-download'
 
@@ -103,12 +115,17 @@ def main():
     seeds = []
     with open(os.path.join(studies_folder, review, 'included.csv')) as f:
         for line in f:
-            seeds.append(line.strip().split(',')[1])
+            parts = line.strip().split(',')
+            if len(parts) >= 2:
+                # Extract EID (second column), remove quotes if present
+                eid = parts[1].strip().strip('"')
+                seeds.append(eid)
 
     print('Getting citation space..')
     scopus_pubs = {}
     for seed in seeds:
-        scopus_pubs[seed] = ScopusPublication(output_folder, seed)
+        # Instantiate the selected Publication class (CrossRefPublication or ScopusPublication)
+        scopus_pubs[seed] = Publication(output_folder, seed)
         scopus_pubs[seed].filter_citations(min_year=min_year, max_year=max_year)
 
     print('Getting strong citation relationships..')

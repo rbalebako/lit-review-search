@@ -15,7 +15,11 @@ def main():
     seeds = []
     with open(os.path.join(studies_folder, review, 'included.csv')) as f:
         for line in f:
-            seeds.append(line.strip().split(',')[1])
+            parts = line.strip().split(',')
+            if len(parts) >= 2:
+                # Extract EID (second column), remove quotes if present
+                eid = parts[1].strip().strip('"')
+                seeds.append(eid)
 
     print('Getting citation space..')
     scopus_pubs = {}

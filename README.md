@@ -283,11 +283,31 @@ Title,DOI
 
 ## Usage
 
+### Unified CSV Format
+
+Both Scopus and CrossRef modules use the **same CSV input format** for maximum flexibility:
+
+```csv
+Title,EID,DOI
+"Paper Title","Scopus EID","DOI"
+```
+
+- **Scopus scripts** (run.py, run_keyword.py, run_topic_model.py) read **column 2 (EID)**
+- **CrossRef script** (run_crossref.py) reads **column 3 (DOI)**
+
+This allows you to:
+- ✅ Use the same input file for both APIs
+- ✅ Switch between Scopus and CrossRef without reformatting
+- ✅ Provide both identifiers for comprehensive coverage
+- ✅ Leave columns empty if only using one API
+
+---
+
 ### Using Scopus API
 
 ### Step 1: Prepare Input Data
 
-Create a CSV file with seed publications:
+Create a CSV file with seed publications. The file uses a **unified format** that works with both Scopus and CrossRef:
 
 ```bash
 mkdir -p data/included-studies/my-review
@@ -295,15 +315,33 @@ mkdir -p data/included-studies/my-review
 
 Create `data/included-studies/my-review/included.csv`:
 ```csv
-Title,EID
-"First Seed Paper",85012345678
-"Second Seed Paper",85023456789
+Title,EID,DOI
+"First Seed Paper","85012345678","10.1037/0003-066X.59.1.29"
+"Second Seed Paper","85023456789","10.1234/example.doi"
+"Paper with only EID","85034567890",""
+"Paper with only DOI","","10.5678/another.doi"
 ```
+
+**CSV Format:**
+- **Column 1 (Title):** Publication title
+- **Column 2 (EID):** Scopus EID - used by Scopus scripts (run.py, run_keyword.py, etc.)
+- **Column 3 (DOI):** Digital Object Identifier - used by CrossRef script (run_crossref.py)
+
+**Tips:**
+- You can provide both EID and DOI for maximum flexibility
+- Leave EID empty (`""`) if using only CrossRef
+- Leave DOI empty (`""`) if using only Scopus
+- The script you run determines which column is used
 
 **Finding Scopus EIDs:**
 1. Search for paper on Scopus.com
 2. The EID is in the URL: `scopus.com/record/display.uri?eid=2-s2.0-85012345678`
 3. Use the numeric part only: `85012345678`
+
+**Finding DOIs:**
+1. Search for paper on CrossRef.org, Google Scholar, or journal website
+2. DOI format: `10.xxxx/xxxxxx`
+3. Example: `10.1037/0003-066X.59.1.29`
 
 ### Step 2: Configure Environment Variables
 
@@ -366,7 +404,7 @@ python3 run_topic_model.py
 
 #### Step 1: Prepare Input Data
 
-Create a CSV file with seed publications (using DOIs instead of EIDs):
+Use the **same unified CSV format** as Scopus. CrossRef scripts read the DOI column (third column):
 
 ```bash
 mkdir -p data/included-studies/crossref-review
@@ -374,15 +412,15 @@ mkdir -p data/included-studies/crossref-review
 
 Create `data/included-studies/crossref-review/included.csv`:
 ```csv
-Title,DOI
-"First Seed Paper","10.1037/0003-066X.59.1.29"
-"Second Seed Paper","10.1234/example.doi"
+Title,EID,DOI
+"First Seed Paper","85012345678","10.1037/0003-066X.59.1.29"
+"Second Seed Paper","85023456789","10.1234/example.doi"
+"Paper with only DOI","","10.5678/another.doi"
 ```
 
-**Finding DOIs:**
-1. Search for paper on CrossRef.org, Google Scholar, or journal website
-2. DOI format: `10.xxxx/xxxxxx`
-3. Example: `10.1037/0003-066X.59.1.29`
+**Note:** CrossRef uses the DOI column (column 3). The EID column can be empty or omitted for CrossRef-only workflows.
+
+**Backward Compatibility:** If you have an old format with only 2 columns (Title,DOI), it will still work.
 
 #### Step 2: Configure Environment Variables (Optional)
 

@@ -5,8 +5,8 @@ python-dotenv>=0.19.0       # Environment variable management
 # Keyword extraction
 rake-nltk>=1.0.6            # RAKE keyword extraction algorithm
 
-# Note: CrossRef API support uses only standard library (json, urllib)
-# No additional dependencies required for CrossRef functionality
+# using https://gitlab.com/crossref/crossref_commons_py
+crossref_commons>=0.3.0   # CrossRef API client
 
 # Optional: Topic modeling (requires external HDP tools)
 # numpy>=1.21.0
