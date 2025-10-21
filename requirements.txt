@@ -1,0 +1,10 @@
+# Core dependencies
+lxml>=4.9.0
+python-dotenv>=0.19.0
+
+# Keyword extraction
+rake-nltk>=1.0.6
+
+# Optional: Topic modeling (requires external HDP tools)
+# numpy>=1.21.0
+# scipy>=1.7.0
