@@ -20,9 +20,14 @@ This system implements a multi-stage filtering approach to expand a small set of
 
 ### CrossRef API
 - **Access:** Free and open, no API key required
-- **Coverage:** Full reference lists, citation counts (full citing works requires membership)
+- **Coverage:** Full reference lists, citation counts 
 - **Best for:** Reference-based analysis, open science projects
 - **Documentation:** https://www.crossref.org/documentation/retrieve-metadata/rest-api/
+- **Python library: CrossRef Commons for python  https://gitlab.com/crossref/crossref_commons_py
+
+### OpenCitations API
+- ** Best For:** Citations and References
+- ** Documentation:** https://opencitations.net
 
 ## Requirements
 
@@ -30,6 +35,7 @@ This system implements a multi-stage filtering approach to expand a small set of
 2. **API Access:**
    - **Scopus API Key** (optional) - For complete citation networks
    - **CrossRef mailto** (optional) - For faster API access (polite pool)
+   - **OpenCitations API Key** 
 3. **Python Dependencies:**
    - lxml
    - python-dotenv

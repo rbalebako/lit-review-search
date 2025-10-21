@@ -85,6 +85,7 @@ def get_citations(doi) -> List[Citation]:
     Example: /citations/doi:10.1108/jd-12-2013-0166 
     """
     api_call = f"https://api.opencitations.net/index/v2/citations/doi:{doi}?format=json"
+    print("calling citations with " + api_call)
     response = get(api_call, headers=HTTP_HEADERS)
     return [Citation.from_opencitations_json(field="cited", item=item) for item in response.json()]
 
