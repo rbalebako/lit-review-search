@@ -1,92 +1,13 @@
 import sys, os, math, time
-import crossref_commons.retrieval
+from crossref_publication import CrossRefPublication 
+from publication import Citation
+from scopus_publication import ScopusPublication
 from dotenv import load_dotenv
 from requests import get
-import requests.exceptions
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, List
-import re
+
 
 from dotenv import load_dotenv
-from scopus_publication import ScopusPublication
-
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Get OpenCitations API key from environment variable
-OPENCITATIONS_API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
-if not OPENCITATIONS_API_KEY:
-    raise ValueError(
-        "OPENCITATIONS_API_KEY not found in environment variables. "
-        "Please create a .env file with your API key. "
-        "See .env.example for template."
-    )
-
-# CrossRef API configuration
-CROSSREF_BASE_URL = 'https://api.crossref.org'
-MAILTO = os.getenv('CROSSREF_MAILTO', '')  # Email for polite pool access
-if MAILTO:
-    print(f"Using CrossRef polite pool with email: {MAILTO}")
-
-
-
-# Rate limiting: CrossRef allows 50 req/sec for polite pool, 5 req/sec otherwise
-RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
-
-# for opencitation
-HTTP_HEADERS = {"authorization": OPENCITATIONS_API_KEY}
-
-@dataclass
-class Citation:
-    doi: str
-    year: Optional[int] = None
-    
-    @classmethod
-    def extract_doi(cls, id_string: str) -> Optional[str]:
-        """Extract DOI from a given identifier string."""
-        doi_pattern = re.compile(r'10.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
-        match = doi_pattern.search(id_string)
-        return match.group(0) if match else None
-    
-    @classmethod
-    def from_opencitations_json(cls, field: str, data: dict):
-        """Create Citation from OpenCitations API response"""
-        id_string = data.get(field, '')
-        doi = cls.extract_doi(id_string= id_string)
-        if not doi:
-            return None
-            
-        date_parts = data.get('creation', {}).split('-')
-        year = int(date_parts[0]) if date_parts else None
-        return cls(doi=doi, year=year)
-
-
-
-def get_references(doi) -> List[Citation]:
-    """
-    CrossrefCommons does bnot have a get reference function, so we use OpenCitations API here.
-    https://api.opencitations.net/index/v2
-
-    all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
-
-    """
-    api_call = f"https://api.opencitations.net/index/v2/references/doi:{doi}?format=json"
-    #print("calling references with " + api_call)
-    response = get(api_call, headers=HTTP_HEADERS)
-    return [Citation.from_opencitations_json(field="cited", data=item) for item in response.json()]
-
-def get_citations(doi) -> List[Citation]:
-    """
-    constitute the incoming citations of that identified bibliographic entity
-    Example: /citations/doi:10.1108/jd-12-2013-0166 
-    """
-    api_call = f"https://api.opencitations.net/index/v2/citations/doi:{doi}?format=json"
-   # print("calling citations with " + api_call)
-    response = get(api_call, headers=HTTP_HEADERS)
-    # TODO time is all the same ignore this for citations
-    return [Citation.from_opencitations_json(field="citing", data=item) for item in response.json()]
 
 
 def get_strong_co_citing(crossref_pub, shared):
@@ -163,64 +84,7 @@ def get_strong_citation_relationship(crossref_pub, shared):
 
     return strong_related_pub_dois
 
-class CrossRefCommonsPublication:
-    """Wrapper for Crossref Commons API access with caching."""
-    
-    def __init__(self, data_folder, doi):
-        self.doi = doi
-        self.data_folder = data_folder
-        self._metadata = None
-        self._references = None
-        self._citations = None
-        
-        # Create cache directory
-        os.makedirs(data_folder, exist_ok=True)
-        
-    @property
-    def metadata(self):
-        if self._metadata is None:
-            try:
-                self._metadata = crossref_commons.retrieval.get_publication_as_json(self.doi)
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching metadata for {self.doi}: {e}")
-                self._metadata = {}
-        return self._metadata
-    
-    @property
-    def references(self) -> List[Citation]:
-        if self._references is None:
-            try:
-                self._references = get_references(self.doi)
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching references for {self.doi}: {e}")
-                self._references = []
-        return self._references
-    
-    @property
-    def citations(self) -> List[Citation]:
-        if self._citations is None:
-            try:
-                self._citations = get_citations(self.doi)
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching citations for {self.doi}: {e}")
-                self._citations = []
-        return self._citations
-    
-    @property
-    def title(self):
-        return self.metadata.get('title', [None])[0]
-    
-    @property
-    def pub_year(self):
-        date_parts = self.metadata.get('published-print', {}).get('date-parts', [[None]])[0]
-        return date_parts[0] if date_parts else None
-    
-    @property
-    def reference_count(self):
-        return len(self.references)
-    
-    def get_citation_count(self):
-        return self.metadata.get('is-referenced-by-count', 0)
+
 
 def check_publication_data(pub, identifier: str, service_name: str):
     """Helper to check if a publication has valid citation data"""
@@ -242,7 +106,7 @@ def create_publication(data_folder, identifier):
     
     # Try CrossRef first
     try:
-        pub = CrossRefCommonsPublication(data_folder, identifier)
+        pub = CrossRefPublication(data_folder, identifier)
         if result := check_publication_data(pub, identifier, "CrossRef"):
             return result
     except Exception as e:
@@ -261,16 +125,12 @@ def create_publication(data_folder, identifier):
 
 def main():
     """
-    Main entry point using Crossref Commons library.
+    Main entry point using Crossref or Scopus to build citations list from seed DOI list
     """
     shared = 0.10
     # TODO either get these values from .env or here, but don't have them in bothe placese
     min_year = 2022
     max_year = 2025
-
-    # Create date bounds for filtering
-    min_date = datetime(min_year, 1, 1)
-    max_date = datetime(max_year, 12, 31)
 
     # TODO find a more obvious place or prompt the user for this
     review = 'firsttry'

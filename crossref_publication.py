@@ -1,155 +1,101 @@
+from dataclasses import dataclass
 from datetime import datetime
 from collections import defaultdict
 import os, json, urllib.request, urllib.error, urllib.parse, time
+from typing import Optional, List
+import re
+import crossref_commons.retrieval
+from requests import get
+from dotenv import load_dotenv
+import requests
+from publication import Publication, Citation
 
 
-class CrossRefPublication():
-    """
-    Represents a publication from CrossRef API with citation network data.
+# Load environment variables from .env file
+load_dotenv()
 
-    Similar to ScopusPublication but uses DOI as identifier and CrossRef API.
-    """
+# Get OpenCitations API key from environment variable
+OPENCITATIONS_API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
+if not OPENCITATIONS_API_KEY:
+    raise ValueError(
+        "OPENCITATIONS_API_KEY not found in environment variables. "
+        "Please create a .env file with your API key. "
+        "See .env.example for template."
+    )
 
-    @property
-    def doi(self):
-        return self.doi_
+# CrossRef API configuration
+CROSSREF_BASE_URL = 'https://api.crossref.org'
+MAILTO = os.getenv('CROSSREF_MAILTO', '')  # Email for polite pool access
+if MAILTO:
+    print(f"Using CrossRef polite pool with email: {MAILTO}")
 
-    @property
-    def references(self):
-        return self.references_
 
-    @property
-    def reference_count(self):
-        return len(self.references_)
 
-    @property
-    def citations(self):
-        return self.citations_
+# Rate limiting: CrossRef allows 50 req/sec for polite pool, 5 req/sec otherwise
+RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
 
-    @property
-    def citation_count(self):
-        return len(self.citations_)
+# for opencitation
+HTTP_HEADERS = {"authorization": OPENCITATIONS_API_KEY}
 
-    @property
-    def co_citing_ids(self):
-        return list(self.co_citing_counts_.keys())
 
-    @property
-    def co_citing_counts(self):
-        return self.co_citing_counts_
+class CrossRefPublication(Publication):
+    """Represents a publication from CrossRef API with citation network data."""
 
-    @property
-    def co_cited_eids(self):
-        return list(self.co_cited_counts_.keys())
+    def __init__(self, data_folder, doi, download=True):
+        super().__init__(data_folder, doi=doi)
+        self._metadata = None  # Declare Crossref-specific attribute
 
-    @property
-    def co_cited_counts(self):
-        return self.co_cited_counts_
-
-    @property
-    def abstract(self):
-        return self.abstract_
+        if download:
+            self.metadata  # Trigger metadata download
 
     @property
-    def pub_year(self):
-        return self.pub_year_
+    def metadata(self):
+        if self._metadata is None:
+            try:
+                self._metadata = crossref_commons.retrieval.get_publication_as_json(self._doi)  # Use parent's _doi
+            except requests.exceptions.RequestException as e:
+                print(f"Error fetching metadata for {self._doi}: {e}")
+                self._metadata = {}
+        return self._metadata
+
+    def get_references(self) -> List['CrossRefPublication.Citation']:
+        """
+        CrossrefCommons does not have a get reference function, so we use OpenCitations API here.
+        https://api.opencitations.net/index/v2
+
+        all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
+        """
+        api_call = f"https://api.opencitations.net/index/v2/references/doi:{self._doi}?format=json"
+        response = get(api_call, headers=HTTP_HEADERS)
+        self._references == self._list_from_opencitations_json(field="cited", data=response.json())
+        return self._references
+
+    def get_citations(self) -> List['CrossRefPublication.Citation']:
+        """
+        constitute the incoming citations of that identified bibliographic entity
+        Example: /citations/doi:10.1108/jd-12-2013-0166 
+        """
+        api_call = f"https://api.opencitations.net/index/v2/citations/doi:{self._doi}?format=json"
+        response = get(api_call, headers=HTTP_HEADERS)
+        self._citations = [self._list_from_opencitations_json(field="citing", data=response.json()) 
+        return self._citations
+    
 
     @property
     def title(self):
-        return self.title_
+        return self.metadata.get('title', [None])[0]
 
-    def __init__(self, data_folder, doi, download=True):
-        """
-        Initialize CrossRefPublication object.
+    @property
+    def pub_year(self):
+        date_parts = self.metadata.get('published-print', {}).get('date-parts', [[None]])[0]
+        return date_parts[0] if date_parts else None
 
-        Args:
-            data_folder (str): Path to folder for storing cached data
-            doi (str): DOI of the publication (e.g., "10.1037/0003-066X.59.1.29")
-            download (bool): If True, download data from API. If False, only load cached data.
-        """
-        self.doi_ = doi
-        # Replace slashes with underscores for safe file names
-        self.safe_doi_ = doi.replace('/', '_')
-        self.data_folder_ = data_folder
-        self.pub_directory_ = os.path.join(data_folder, self.safe_doi_)
+    @property
+    def reference_count(self):
+        return len(self.references)
 
-        # Create publication directory if it does not exist
-        if not os.path.exists(self.pub_directory_):
-            os.makedirs(self.pub_directory_)
-
-        self.references_ = []
-        self.citations_ = []
-        self.co_citing_counts_ = defaultdict(int)
-        self.co_cited_counts_ = defaultdict(int)
-        self.abstract_ = ''
-        self.title_ = ''
-        self.pub_year_ = None
-
-        metadata_file = os.path.join(self.pub_directory_, 'metadata.json')
-
-        # Download metadata if it doesn't exist and download=True
-        if download and not os.path.exists(metadata_file):
-            self.download_metadata(metadata_file)
-
-        # Load metadata from file
-        if os.path.exists(metadata_file):
-            self.load_metadata(metadata_file)
-            self.extract_references()
-            self.extract_metadata()
-
-        # Get citations (noted: full citation list requires Cited-by membership)
-        # We can get the count but not the full list without membership
-        # For now, we'll store the citation count and leave citations_ empty
-        # unless we implement OpenCitations integration
-
-    def download_metadata(self, metadata_file):
-        """
-        Download publication metadata from CrossRef API.
-
-        Args:
-            metadata_file (str): Path to save the metadata JSON
-        """
-        try:
-            # Build API URL
-            url = f'{CROSSREF_BASE_URL}/works/{self.doi_}'
-
-            # Create request with polite pool headers
-            headers = {
-                'User-Agent': f'LiteratureReviewSearch/1.0 (mailto:{MAILTO})' if MAILTO else 'LiteratureReviewSearch/1.0'
-            }
-
-            req = urllib.request.Request(url, headers=headers)
-            response = urllib.request.urlopen(req, timeout=30)
-            data = response.read()
-
-            # Save to file
-            with open(metadata_file, 'wb') as f:
-                f.write(data)
-
-            print(f'Downloaded metadata for DOI: {self.doi_}')
-
-        except urllib.error.HTTPError as e:
-            print(f'Error downloading metadata for DOI {self.doi_}: HTTP {e.code}')
-        except Exception as e:
-            print(f'Error downloading metadata for DOI {self.doi_}: {e}')
-
-        # Rate limiting
-        time.sleep(RATE_LIMIT_DELAY)
-
-    def load_metadata(self, metadata_file):
-        """
-        Load metadata from cached JSON file.
-
-        Args:
-            metadata_file (str): Path to the metadata JSON file
-        """
-        try:
-            with open(metadata_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self.metadata_ = data.get('message', {})
-        except Exception as e:
-            print(f'Error loading metadata for DOI {self.doi_}: {e}')
-            self.metadata_ = {}
+    def get_citation_count(self):
+        return self.metadata.get('is-referenced-by-count', 0)
 
     def extract_metadata(self):
         """
@@ -172,41 +118,6 @@ class CrossRefPublication():
             date_parts = pub_date['date-parts'][0]
             if date_parts:
                 self.pub_year_ = date_parts[0]
-
-    def extract_references(self):
-        """
-        Extract references (works cited by this publication) from metadata.
-        """
-        if not hasattr(self, 'metadata_'):
-            return
-
-        references = self.metadata_.get('reference', [])
-
-        for ref in references:
-            ref_doi = ref.get('DOI')
-            ref_title = ref.get('article-title', '') or ref.get('volume-title', '')
-
-            if ref_doi:
-                self.references_.append({
-                    'doi': ref_doi,
-                    'title': ref_title
-                })
-
-    def get_citation_count(self):
-        """
-        Get the number of citations from metadata.
-
-        Note: CrossRef provides citation count via 'is-referenced-by-count'
-        but getting the full list of citing works requires Cited-by membership
-        or using external services like OpenCitations.
-
-        Returns:
-            int: Number of citations
-        """
-        if not hasattr(self, 'metadata_'):
-            return 0
-
-        return self.metadata_.get('is-referenced-by-count', 0)
 
     def filter_citations(self, min_year=None, max_year=None):
         """
@@ -238,6 +149,9 @@ class CrossRefPublication():
         self.citations_ = filtered_citations
         # Note: Co-citing calculation would happen here if we had citation data
 
+
+
+
     def get_cociting_ids(self):
         """
         Calculate co-citing relationships.
@@ -256,6 +170,43 @@ class CrossRefPublication():
         """
         # Placeholder - would need citation data to implement
         pass
+
+    @property
+    def references(self) -> List[Citation]:
+        """Lazy-loaded access to references."""
+        if not self._references:  # This will check both None and empty array
+            self.get_references()
+        return self._references
+
+    @property 
+    def citations(self) -> List[Citation]:
+        """Lazy-loaded access to citations."""
+        if not self._citations:
+            self.get_citations()
+        return self._citations
+    
+    @classmethod
+    def _extract_doi(self, id_string: str) -> Optional[str]:
+        """Extract DOI from a given identifier string."""
+        match = doi_pattern.search(id_string)
+        doi_pattern = re.compile(r'doi:\d\d.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE) 
+        match = doi_pattern.search(id_string)
+        return match.group(0) if match else None
+    
+    @classmethod
+    def _list_from_opencitations_json(self, field: str, data: dict):
+        """Create list of dois from OpenCitations API response"""
+        if isinstance(data, list):
+            dois = []
+            for item in data:
+                id_string = item.get(field, '')
+                doi = self._extract_doi(id_string=id_string)
+                if doi:
+                    dois.append(doi)
+            return dois
+        else:
+            print(f"Warning: OpenCitations references API did not return a list.")
+            return None
 
     @staticmethod
     def search_by_title(title, data_folder):
@@ -289,7 +240,6 @@ class CrossRefPublication():
                     pub = CrossRefPublication(data_folder, doi, download=False)
                     pub.metadata_ = item
                     pub.extract_metadata()
-                    pub.extract_references()
                     results.append(pub)
 
             time.sleep(RATE_LIMIT_DELAY)
@@ -342,18 +292,3 @@ class CrossRefPublication():
             return []
 
 
-def convert_scopus_to_crossref(scopus_title, data_folder):
-    """
-    Helper function to find CrossRef DOI for a Scopus publication by title.
-
-    Args:
-        scopus_title (str): Title of the Scopus publication
-        data_folder (str): Folder for caching CrossRef data
-
-    Returns:
-        CrossRefPublication or None: Matching publication if found
-    """
-    results = CrossRefPublication.search_by_title(scopus_title, data_folder)
-    if results:
-        return results[0]  # Return best match
-    return None

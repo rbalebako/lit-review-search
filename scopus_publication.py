@@ -3,6 +3,7 @@ from datetime import datetime
 from collections import defaultdict
 import os, json, urllib.request, urllib.error, urllib.parse, time, xml.etree.ElementTree as ET
 from dotenv import load_dotenv
+from publication import Publication, Citation
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,104 +20,53 @@ if not API_KEY:
 # Get current year from environment or use current year
 CURRENT_YEAR = int(os.getenv('CURRENT_YEAR', datetime.now().year))
 
-class ScopusPublication():
-    @property
-    def eid(self):
-        return self.eid_
-
-    @property
-    def references(self):
-        return self.references_
-
-    @property
-    def reference_count(self):
-        return len(self.references_)
-
-    @property
-    def citations(self):
-        return self.citations_
-
-    @property
-    def citation_count(self):
-        return len(self.citation_)
-
-    @property
-    def co_citing_eids(self):
-        return list(self.co_citing_counts_.keys())
-
-    @property
-    def co_citing_counts(self):
-        return self.co_citing_counts_
-
-    @property
-    def co_cited_eids(self):
-        return list(self.co_cited_counts_.keys())
-
-    @property
-    def co_cited_counts(self):
-        return self.co_cited_counts_
-
-    @property
-    def abstract(self):
-        return self.abstract_
-
-    @property
-    def pub_year(self):
-        return self.pub_year_
-
+class ScopusPublication(Publication):
+    """Represents a publication from Scopus API with citation network data."""
+    
     def __init__(self, data_folder, eid):
-        self.eid_ = eid.rjust(10, '0')
-        self.data_folder_ = data_folder
-        self.pub_directory_ = os.path.join(data_folder, self.eid_)
+        super().__init__(data_folder, eid=eid)
+        # Don't set eid_ since parent manages _eid
         
-        #create publication directory if it does not exist
-        if not os.path.exists(self.pub_directory_):
-            os.makedirs(self.pub_directory_)
-
-        self.references_ = []
-        self.citations_ = []
-        self.co_citing_counts_ = defaultdict(int)
-        self.co_cited_counts_ = defaultdict(int)
-
-        reference_file = os.path.join(data_folder, self.eid_, 'references.xml')
-
-        # download Scopus abstract file (also contains references) if it does not exist
+        # Initialize Scopus specific attributes
+        self.reference_xml = None  # Add proper declaration
+        self.citations_folder = os.path.join(self._pub_directory, 'citations')
+        
+        # Get reference data
+        reference_file = os.path.join(self._pub_directory, 'references.xml')
         if not os.path.exists(reference_file):
             self.download_reference_file(reference_file)
         
         self.get_reference_file(reference_file)
         self.get_reference_eids()
-
         self.get_abstract()
         self.get_year()
-
-        self.citations_folder_ = os.path.join(self.pub_directory_, 'citations')
-
-        if not os.path.exists(self.citations_folder_):
+        
+        # Get citation data
+        if not os.path.exists(self.citations_folder):
             self.download_citation_files()
         self.get_citation_eids()
 
     def get_abstract(self):
-        self.abstract_ = ''
-        if self.reference_xml_ != None:
-            abstract_xmls = self.reference_xml_.xpath('/ns0:abstracts-retrieval-response/ns0:coredata/dc:description/abstract[@xml:lang="eng"]', \
+        self._abstract = ''  # Use parent's _abstract
+        if self.reference_xml:  # Remove underscore from reference_xml_
+            abstract_xmls = self.reference_xml.xpath('/ns0:abstracts-retrieval-response/ns0:coredata/dc:description/abstract[@xml:lang="eng"]', \
                 namespaces={'ns0':'http://www.elsevier.com/xml/svapi/abstract/dtd', \
                 'dc':'http://purl.org/dc/elements/1.1/'})
 
             for abstract_xml in abstract_xmls:
                 paragraph_xmls = abstract_xml.xpath('ns3:para', namespaces={'ns3':'http://www.elsevier.com/xml/ani/common'})
                 for paragraph_xml in paragraph_xmls:
-                    self.abstract_ = ' '.join([self.abstract_, paragraph_xml.xpath('string(.)')])
+                    self._abstract = ' '.join([self._abstract, paragraph_xml.xpath('string(.)')])
 
     def get_year(self):
         try:
-            pub_date = self.reference_xml_.xpath('/ns0:abstracts-retrieval-response/ns0:coredata/ns1:coverDate', \
+            pub_date = self.reference_xml.xpath('/ns0:abstracts-retrieval-response/ns0:coredata/ns1:coverDate', \
             namespaces={'ns0':'http://www.elsevier.com/xml/svapi/abstract/dtd', \
             'ns1': 'http://prismstandard.org/namespaces/basic/2.0/'})
 
-            self.pub_year_ = datetime.strptime(pub_date[0].text, '%Y-%m-%d').year
+            self._pub_year = datetime.strptime(pub_date[0].text, '%Y-%m-%d').year  # Use parent's _pub_year
         except Exception as e:
-            self.pub_year_ = 1900
+            self._pub_year = 1900
 
     def download_reference_file(self, reference_file):
         try:
@@ -141,24 +91,24 @@ class ScopusPublication():
     def get_reference_file(self, reference_file):
         try:
             tree = etree.parse(reference_file)
-            self.reference_xml_ = tree.getroot()
+            self.reference_xml = tree.getroot()  # Update to reference_xml
         except Exception as e:
-            self.reference_xml_ = None
+            self.reference_xml = None
 
     def get_reference_eids(self):
-        if self.reference_xml_ != None:
-            references = self.reference_xml_.xpath('/ns0:abstracts-retrieval-response/item/bibrecord/tail/bibliography/reference', \
+        if self.reference_xml != None:
+            references = self.reference_xml.xpath('/ns0:abstracts-retrieval-response/item/bibrecord/tail/bibliography/reference', \
                 namespaces={'ns0':'http://www.elsevier.com/xml/svapi/abstract/dtd'})
 
             for reference in references:
                 title = reference.xpath('ref-info/ref-title/ref-titletext')
                 ref_eid = reference.xpath('ref-info/refd-itemidlist/itemid[@idtype="SGR"]')[0].text
 
-                if ref_eid not in self.references_:
+                if ref_eid not in self._references:  # Update to _references
                     if len(title) > 0:
-                        self.references_.append({'eid' : ref_eid, 'title' : title[0].text})
+                        self._references.append({'eid' : ref_eid, 'title' : title[0].text})
                     else:
-                        self.references_.append({'eid' : ref_eid, 'title' : None})
+                        self._references.append({'eid' : ref_eid, 'title' : None})
 
     def get_citation_eids(self):
         if os.path.exists(self.citations_folder_):
@@ -183,7 +133,7 @@ class ScopusPublication():
                                         year = None
 
                                     #add year
-                                    self.citations_.append({'eid' : cit_eid, 'title' : title, 'year' : year})
+                                    self._citations.append({'eid' : cit_eid, 'title' : title, 'year' : year})  # Update to _citations
 
     def download_citation_files(self):
         try:         
@@ -267,12 +217,12 @@ class ScopusPublication():
 
 
     def get_cociting_eids(self):
-        for reference in self.references_:
+        for reference in self._references:  # Update to _references
             pub = ScopusPublication(self.data_folder_, reference['eid'])
 
             for citation in pub.citations:
                 if citation['eid'] != self.eid_:
-                    self.co_citing_counts_[citation['eid']] += 1
+                    self._co_citing_counts[citation['eid']] += 1  # Update to _co_citing_counts
 
     def get_co_cited_eids(self):
         for citation in self.citations_:
@@ -280,4 +230,4 @@ class ScopusPublication():
 
             for reference in pub.references:
                 if reference['eid'] != self.eid_:
-                    self.co_cited_counts_[citation['eid']] += 1
+                    self._co_cited_counts[citation['eid']] += 1  # Update to _co_cited_counts
