@@ -115,7 +115,7 @@ def create_publication(data_folder, identifier):
     # Try Scopus as fallback
     try:
         pub = ScopusPublication(data_folder, identifier)
-        // TODO check why not returning results
+        // TODO I don't have an API key, so this doesnt work
         if result := check_publication_data(pub, identifier, "Scopus"):
             return result
     except Exception as e:

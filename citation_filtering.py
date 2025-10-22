@@ -1,37 +1,37 @@
 import math, os
-from scopus_publication import ScopusPublication
+from publication import Publication 
 
-def get_strong_co_citing(scopus_pub, shared):
-    min_count = math.ceil(scopus_pub.reference_count * shared)
+def get_strong_co_citing(publication, shared):
+    min_count = math.ceil(publication.reference_count * shared)
 
     eids = []
-    for eid, count in list(scopus_pub.co_citing_counts.items()):
+    for eid, count in list(publication.co_citing_counts.items()):
             if count >= min_count:
                 eids.append(eid)
 
     return eids
 
-def get_strong_co_cited(scopus_pub, shared):
-    min_count = math.ceil(scopus_pub.citation_count * shared)
+def get_strong_co_cited(publication, shared):
+    min_count = math.ceil(publication.citation_count * shared)
     
     eids = []
-    for eid, count in list(scopus_pub.co_cited_counts.items()):
+    for eid, count in list(publication.co_cited_counts.items()):
         if count >= min_count:
             eids.append(eid)
 
     return eids
 
-def get_strong_citation_relationship(scopus_pub, shared, store = False, overwrite = False):
+def get_strong_citation_relationship(publication, shared, store = False, overwrite = False):
     """
-    Compute the set of strongly related publication EIDs for a ScopusPublication.
+    Compute the set of strongly related publication IDs for a Publication.
 
     This function:
-      - collects direct references' and citations' EIDs,
+      - collects direct references' and citations' EIDs or DOIs,
       - adds EIDs from strong co-citing and strong co-cited publications,
       - optionally stores the resulting set to data/<eid>/top_shared.txt.
 
     Args:
-        scopus_pub (ScopusPublication): publication to analyze.
+        publication (Publication): publication to analyze.
         shared (float): threshold fraction for co-citing/co-cited decisions.
         store (bool): if True, write results to disk under data/<eid>/top_shared.txt.
         overwrite (bool): if True, overwrite existing file when storing.
@@ -41,17 +41,18 @@ def get_strong_citation_relationship(scopus_pub, shared, store = False, overwrit
     """
     strong_related_pub_eids = set()
 
-    for reference in scopus_pub.references_:
+    #TODO in the Crossref version, this will be a list of DOIs with 'doi' in the name
+    for reference in publication.references_:
         strong_related_pub_eids.add(reference['eid'])
 
-    for citation in scopus_pub.citations_:
+    for citation in publication.citations_:
         strong_related_pub_eids.add(citation['eid'])
 
-    strong_related_pub_eids = strong_related_pub_eids.union(get_strong_co_citing(scopus_pub, shared))
-    strong_related_pub_eids = strong_related_pub_eids.union(get_strong_co_cited(scopus_pub, shared))
+    strong_related_pub_eids = strong_related_pub_eids.union(get_strong_co_citing(publication, shared))
+    strong_related_pub_eids = strong_related_pub_eids.union(get_strong_co_cited(publication, shared))
 
     if store:
-        out_path = os.path.join('data', scopus_pub.eid, 'top_shared.txt')
+        out_path = os.path.join('data', publication.eid, 'top_shared.txt')
         # create directory if needed
         out_dir = os.path.dirname(out_path)
         if not os.path.exists(out_dir):

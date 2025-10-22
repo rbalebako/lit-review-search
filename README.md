@@ -26,7 +26,7 @@ This system implements a multi-stage filtering approach to expand a small set of
 - **Python library: CrossRef Commons for python  https://gitlab.com/crossref/crossref_commons_py
 
 ### OpenCitations API
-- ** Best For:** Citations and References
+- ** Best For:** Citations and References, as CrossRef does not have this.
 - ** Documentation:** https://opencitations.net
 
 ## Requirements
@@ -88,15 +88,15 @@ Input Seed Papers → Citation Network Download → Network Expansion → Filter
 
 ### Core Components
 
-#### 1. ScopusPublication Class (`scopus_publication.py`)
+#### 1. Publication Class (`publications.py` is parent class to `scopus_publication.py` and `crossref_publication`)
 
-The central data model that handles all publication data and Scopus API interactions.
+The central data model that handles all publication data and Scopus API or CrossRef interactions.
 
 **Key Features:**
-- Downloads and caches publication metadata, references, and citations from Scopus API
+- Downloads and caches publication metadata, references, and citations from Scopus or CrossRef API
 - Extracts abstracts and publication years
 - Computes co-citation and co-citing relationships
-- Implements rate limiting (5-second delays between API calls)
+- Implements rate limiting (1-second delays between API calls). #TODO maybe this can be an environemnt variable?
 
 **Data Stored Per Publication:**
 ```
@@ -112,8 +112,9 @@ data/scopus-download/{eid}/
 
 **Properties:**
 - `eid` - Scopus publication ID
-- `references` - Publications this paper cites
-- `citations` - Papers that cite this publication
+- `doi` - document ID for Crossref
+- `references` - IDs of Publications this paper cites
+- `citations` - IDs Papers that cite this publication
 - `co_citing_counts` - Papers that cite the same references
 - `co_cited_counts` - Papers cited by the same citations
 - `abstract` - English abstract text
