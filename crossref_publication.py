@@ -67,8 +67,9 @@ class CrossRefPublication(Publication):
         """
         api_call = f"https://api.opencitations.net/index/v2/references/doi:{self._doi}?format=json"
         response = get(api_call, headers=HTTP_HEADERS)
-        self._references == self._list_from_opencitations_json(field="cited", data=response.json())
-        return self._references
+        print(f"Calling {api_call} for references")
+        list_of_dois = self._list_from_opencitations_json(field="cited", data=response.json())
+        return list_of_dois
 
     def get_citations(self) -> List['CrossRefPublication.Citation']:
         """
@@ -77,8 +78,8 @@ class CrossRefPublication(Publication):
         """
         api_call = f"https://api.opencitations.net/index/v2/citations/doi:{self._doi}?format=json"
         response = get(api_call, headers=HTTP_HEADERS)
-        self._citations = [self._list_from_opencitations_json(field="citing", data=response.json()) 
-        return self._citations
+        list_of_dois  = self._list_from_opencitations_json(field="citing", data=response.json()) 
+        return list_of_dois 
     
 
     @property
@@ -175,21 +176,20 @@ class CrossRefPublication(Publication):
     def references(self) -> List[Citation]:
         """Lazy-loaded access to references."""
         if not self._references:  # This will check both None and empty array
-            self.get_references()
+            self._references = self.get_references()
         return self._references
 
     @property 
     def citations(self) -> List[Citation]:
         """Lazy-loaded access to citations."""
         if not self._citations:
-            self.get_citations()
+            self._citations =self.get_citations()
         return self._citations
     
     @classmethod
     def _extract_doi(self, id_string: str) -> Optional[str]:
         """Extract DOI from a given identifier string."""
-        match = doi_pattern.search(id_string)
-        doi_pattern = re.compile(r'doi:\d\d.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE) 
+        doi_pattern = re.compile(r'doi:\d{2}.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
         match = doi_pattern.search(id_string)
         return match.group(0) if match else None
     
@@ -290,5 +290,3 @@ class CrossRefPublication(Publication):
         except Exception as e:
             print(f'Error searching for author "{author_name}": {e}')
             return []
-
-
