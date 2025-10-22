@@ -9,6 +9,7 @@ from typing import Optional, List
 import re
 
 from dotenv import load_dotenv
+from scopus_publication import ScopusPublication
 
 
 # Load environment variables from .env file
@@ -40,28 +41,26 @@ HTTP_HEADERS = {"authorization": OPENCITATIONS_API_KEY}
 @dataclass
 class Citation:
     doi: str
-    date: Optional[datetime] = None
+    year: Optional[int] = None
     
-    @staticmethod
-    def extract_doi(id_string: str) -> Optional[str]:
-        """Extract DOI from OpenCitations identifier string.
-        Example input: "omid:br/06101801781 doi:10.7717/peerj-cs.421 pmid:33817056"
-        """
-        doi_pattern = r'doi:(10\.\d{4,}/[-._;()/:\w]+)'
-        match = re.search(doi_pattern, id_string)
-        return match.group(1) if match else None
+    @classmethod
+    def extract_doi(cls, id_string: str) -> Optional[str]:
+        """Extract DOI from a given identifier string."""
+        doi_pattern = re.compile(r'10.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
+        match = doi_pattern.search(id_string)
+        return match.group(0) if match else None
     
     @classmethod
     def from_opencitations_json(cls, field: str, data: dict):
         """Create Citation from OpenCitations API response"""
-        id_string= data.get(field, '')  # for citations
-        doi = cls.extract_doi(id_string)
+        id_string = data.get(field, '')
+        doi = cls.extract_doi(id_string= id_string)
         if not doi:
             return None
             
-        date_str = data.get('date', '')
-        date = datetime.strptime(date_str, '%Y-%m-%d') if date_str else None
-        return cls(doi=doi, date=date)
+        date_parts = data.get('creation', {}).split('-')
+        year = int(date_parts[0]) if date_parts else None
+        return cls(doi=doi, year=year)
 
 
 
@@ -73,11 +72,10 @@ def get_references(doi) -> List[Citation]:
     all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
 
     """
-
     api_call = f"https://api.opencitations.net/index/v2/references/doi:{doi}?format=json"
-    print("calling references with " + api_call)
+    #print("calling references with " + api_call)
     response = get(api_call, headers=HTTP_HEADERS)
-    return [Citation.from_opencitations_json(field="citing", item=item) for item in response.json()]
+    return [Citation.from_opencitations_json(field="cited", data=item) for item in response.json()]
 
 def get_citations(doi) -> List[Citation]:
     """
@@ -85,9 +83,10 @@ def get_citations(doi) -> List[Citation]:
     Example: /citations/doi:10.1108/jd-12-2013-0166 
     """
     api_call = f"https://api.opencitations.net/index/v2/citations/doi:{doi}?format=json"
-    print("calling citations with " + api_call)
+   # print("calling citations with " + api_call)
     response = get(api_call, headers=HTTP_HEADERS)
-    return [Citation.from_opencitations_json(field="cited", item=item) for item in response.json()]
+    # TODO time is all the same ignore this for citations
+    return [Citation.from_opencitations_json(field="citing", data=item) for item in response.json()]
 
 
 def get_strong_co_citing(crossref_pub, shared):
@@ -181,9 +180,6 @@ class CrossRefCommonsPublication:
     def metadata(self):
         if self._metadata is None:
             try:
-                # Specify required parameters:
-                # - entity_type='works' for publications
-                # - output_type='json' for JSON response
                 self._metadata = crossref_commons.retrieval.get_publication_as_json(self.doi)
             except requests.exceptions.RequestException as e:
                 print(f"Error fetching metadata for {self.doi}: {e}")
@@ -226,6 +222,43 @@ class CrossRefCommonsPublication:
     def get_citation_count(self):
         return self.metadata.get('is-referenced-by-count', 0)
 
+def check_publication_data(pub, identifier: str, service_name: str):
+    """Helper to check if a publication has valid citation data"""
+    try:
+        if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
+            ref_count = len(pub.references)
+            cite_count = len(pub.citations)
+            if ref_count > 0 and cite_count > 0:
+                print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
+                return pub
+            print(f"{service_name} missing citations/references for {identifier}")
+    except Exception as e:
+        print(f"Error accessing {service_name} data for {identifier}: {e}")
+    return None
+
+def create_publication(data_folder, identifier):
+    """Factory function that tries to create a CrossRef publication first,
+    falls back to Scopus if that fails or if CrossRef has no references/citations."""
+    
+    # Try CrossRef first
+    try:
+        pub = CrossRefCommonsPublication(data_folder, identifier)
+        if result := check_publication_data(pub, identifier, "CrossRef"):
+            return result
+    except Exception as e:
+        print(f"Failed to create CrossRef publication for {identifier}: {e}")
+    
+    # Try Scopus as fallback
+    try:
+        pub = ScopusPublication(data_folder, identifier)
+        if result := check_publication_data(pub, identifier, "Scopus"):
+            return result
+    except Exception as e:
+        print(f"Failed to create Scopus publication for {identifier}: {e}")
+    
+    print(f"No valid publication data found for {identifier}")
+    return None
+
 def main():
     """
     Main entry point using Crossref Commons library.
@@ -262,45 +295,38 @@ def main():
 
     print(f'Found {len(seeds)} seed publications')
     
-    print('Getting citation space using Crossref Commons...')
-    crossref_pubs = {}
+    print('Getting citation space...')
+    publications = {}
     for seed_doi in seeds:
-        print(f'  Processing: {seed_doi}')
-        try:
-            pub = CrossRefCommonsPublication(output_folder, seed_doi)
-            print(pub)
-            crossref_pubs[seed_doi] = pub
+        print(f"  Processing: {seed_doi}")
+        pub = create_publication(output_folder, seed_doi)
+        if pub:
+            publications[seed_doi] = pub
             
             # Display basic info
-            print(f'    Title: {pub.title}')
-            print(f'    Year: {pub.pub_year}')
-            print(f'    References: {pub.reference_count}')
-            print(f'    Citation count: {pub.get_citation_count()}')
+            print(f"    Title: {pub.title}")
+            print(f"    Year: {pub.pub_year}")
+            print(f"    References: {pub.reference_count}")
+            print(f"    Citation count: {pub.get_citation_count()}")
             
-            # Rate limiting
-            time.sleep(1)  # Be nice to the API
-            
-        except Exception as e:
-            print(f'Error processing {seed_doi}: {e}')
-            continue
-
-    print('\nGetting citation relationships...')
+            time.sleep(1)  # Rate limiting
+    
     all_related_dois = set()
-    for seed_doi, pub in crossref_pubs.items():
+    for seed_doi, pub in publications.items():
         related_dois = set()
         
-        # Add references within date range
+        # Add references within year range
         for ref in pub.references:
             if ref and isinstance(ref, Citation):
-                if ref.date and min_date <= ref.date <= max_date:
+                if ref.year and min_year <= ref.year <= max_year:
                     related_dois.add(ref.doi)
-                
-        # Add citations within date range
+
+        
+        # Add citations within year range
         for cite in pub.citations:
             if cite and isinstance(cite, Citation):
-                if cite.date and min_date <= cite.date <= max_date:
-                    related_dois.add(cite.doi)
-        
+                related_dois.add(cite.doi)
+
         all_related_dois.update(related_dois)
         print(f'  {seed_doi}: {len(related_dois)} related publications')
 
@@ -309,14 +335,12 @@ def main():
     # Save results
     output_file = os.path.join('data', 'crossref_related_dois.txt')
     os.makedirs('data', exist_ok=True)
-    
+
     with open(output_file, 'w') as f:
-        for doi in sorted(all_related_dois):
+        for doi in all_related_dois:
             f.write(f'{doi}\n')
+        print(f'\nResults saved to: {output_file}')
 
-    print(f'\nResults saved to: {output_file}')
-
-
-
-if __name__ == "__main__":
+if __name__ == "__main__":   
     main()
+

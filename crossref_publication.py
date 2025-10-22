@@ -2,28 +2,6 @@ from datetime import datetime
 from collections import defaultdict
 import os, json, urllib.request, urllib.error, urllib.parse, time
 
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
-
-# CrossRef API configuration
-CROSSREF_BASE_URL = 'https://api.crossref.org'
-MAILTO = os.getenv('CROSSREF_MAILTO', '')  # Email for polite pool access
-if MAILTO:
-    print(f"Using CrossRef polite pool with email: {MAILTO}")
-
-# Get OpenCitations API key from environment variable
-API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
-if not API_KEY:
-    raise ValueError(
-        "OPENCITATIONS_API_KEY not found in environment variables. "
-        "Please create a .env file with your API key. "
-        "See .env.example for template."
-    )
-
-# Rate limiting: CrossRef allows 50 req/sec for polite pool, 5 req/sec otherwise
-RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
 
 class CrossRefPublication():
     """

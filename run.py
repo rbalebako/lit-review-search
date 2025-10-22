@@ -35,7 +35,7 @@ def get_strong_co_citing(publication, shared):
 
 def get_strong_co_cited(publication, shared):
     """
-    Return EIDs of publications that are strongly co-cited with the given publication.
+    Return IDs of publications that are strongly co-cited with the given publication.
 
     Args:
         publication: Publication-like object whose co-cited counts are examined.
