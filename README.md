@@ -1,4 +1,4 @@
-# Literature Review Search System
+∏# Literature Review Search System
 
 A Python-based automated literature review tool that uses citation network analysis and keyword filtering to identify relevant publications from seed papers. Supports both **Scopus API** and **CrossRef API**.
 
@@ -484,10 +484,11 @@ python3 run_crossref.py
               ↓
 ┌─────────────────────────────────────────┐
 │ PHASE 1: Download Citation Networks     │
-│ • Query Scopus API for each seed        │
-│ • Download references.xml               │
-│ • Download citations (paginated JSON)   │
-│ • Cache all data locally                │
+│ • Query CrossRef for each seed          │
+│ • Query Scopus API for remaining seed   │
+│ • Download direct references            │
+│ • Download direct citations             │
+│ • Cache direct ids locally              │
 └─────────────┬───────────────────────────┘
               │
               ↓

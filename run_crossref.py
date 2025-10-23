@@ -1,13 +1,9 @@
-import sys, os, math, time
+import os, math, time
+import csv
 from crossref_publication import CrossRefPublication 
-from publication import Citation
 from scopus_publication import ScopusPublication
-from dotenv import load_dotenv
-from requests import get
-from dataclasses import dataclass
 
 
-from dotenv import load_dotenv
 
 
 def get_strong_co_citing(crossref_pub, shared):
@@ -114,22 +110,64 @@ def create_publication(data_folder, identifier):
     
     # Try Scopus as fallback
     try:
-        pub = ScopusPublication(data_folder, identifier)
-        // TODO I don't have an API key, so this doesnt work
-        if result := check_publication_data(pub, identifier, "Scopus"):
-            return result
+        # TODO I don't have an API key, so this doesn't work
+        no_api=True
+        while (no_api):
+            pub = ScopusPublication(data_folder, identifier)
+    
+            if result := check_publication_data(pub, identifier, "Scopus"):
+                return result
+            
     except Exception as e:
         print(f"Failed to create Scopus publication for {identifier}: {e}")
     
     print(f"No valid publication data found for {identifier}")
     return None
 
+
+def get_all_related_publications(seedids, output_folder):
+    """
+    Given a list of seed publication IDs, return the set of all related publication IDs.
+
+    Args:
+        seedids (list): List of seed publication IDs.
+
+    Returns:
+        set: Set of all related publication IDs.
+    """
+       
+    publications = {} # list of citations and references
+    all_related_ids = set()
+    for seed_id in seedids:
+        print(f"  Processing: {seed_id}")
+        pub = create_publication(output_folder, seed_id)
+        if pub:
+            publications[seed_id] = pub
+
+            # Display basic info
+            print(f"    Title: {pub.title}")
+            print(f"    Year: {pub.pub_year}")
+            print(f"    References: {pub.reference_count}")
+            print(f"    Citation count: {pub.get_citation_count()}")
+
+            #TODO create a function in ScopusPublication to get related IDs
+            related_ids = set(pub.references + pub.citations)     
+        
+            print(f'  {seed_id}: {len(related_ids)} related publications')
+            all_related_ids.update(related_ids)
+            time.sleep(1)  # TODO set Rate limiting
+    
+
+    return all_related_ids
+
+
+
 def main():
     """
     Main entry point using Crossref or Scopus to build citations list from seed DOI list
     """
     shared = 0.10
-    # TODO either get these values from .env or here, but don't have them in bothe placese
+    # TODO either get these values from .env or here, but don't have them in both places
     min_year = 2022
     max_year = 2025
 
@@ -146,61 +184,31 @@ def main():
         print(f'ERROR: Input file not found: {input_file}')
         return
 
-    with open(input_file) as f:
-        for line in f:
-            parts = line.strip().split(',')
-            if len(parts) >= 3:
-                doi = parts[2].strip().strip('"')
-                if doi:
-                    seeds.append(doi)
+    # Use csv library for parsing
+    with open(input_file, 'r') as f:
+        reader = csv.reader(f)
+        header = next(reader)  # Skip header row
+        for row in reader:
+            if len(row) >= 3:
+                id = row[2].strip().strip('"')
+                if id:
+                    seeds.append(id)
 
     print(f'Found {len(seeds)} seed publications')
-    
-    print('Getting citation space...')
-    publications = {}
-    for seed_doi in seeds:
-        print(f"  Processing: {seed_doi}")
-        pub = create_publication(output_folder, seed_doi)
-        if pub:
-            publications[seed_doi] = pub
-            
-            # Display basic info
-            print(f"    Title: {pub.title}")
-            print(f"    Year: {pub.pub_year}")
-            print(f"    References: {pub.reference_count}")
-            print(f"    Citation count: {pub.get_citation_count()}")
-            
-            time.sleep(1)  # Rate limiting
-    
-    all_related_dois = set()
-    for seed_doi, pub in publications.items():
-        related_dois = set()
-        
-        # Add references within year range
-        for ref in pub.references:
-            if ref and isinstance(ref, Citation):
-                if ref.year and min_year <= ref.year <= max_year:
-                    related_dois.add(ref.doi)
 
-        
-        # Add citations within year range
-        for cite in pub.citations:
-            if cite and isinstance(cite, Citation):
-                related_dois.add(cite.doi)
-
-        all_related_dois.update(related_dois)
-        print(f'  {seed_doi}: {len(related_dois)} related publications')
-
-    print(f'\nTotal unique related publications: {len(all_related_dois)}')
+    all_related_ids = get_all_related_publications(seeds, output_folder)
+    print(f'\nTotal unique related publications: {len(all_related_ids)}')
 
     # Save results
-    output_file = os.path.join('data', 'crossref_related_dois.txt')
+    output_file = os.path.join('data', review, 'crossref_related_dois.txt')
     os.makedirs('data', exist_ok=True)
 
     with open(output_file, 'w') as f:
-        for doi in all_related_dois:
-            f.write(f'{doi}\n')
+        for id in all_related_ids:
+            f.write(f'{id}\n')
         print(f'\nResults saved to: {output_file}')
+
+    
 
 if __name__ == "__main__":   
     main()

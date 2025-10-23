@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List
 from collections import defaultdict
-import os
 from pathlib import Path
 from abc import abstractmethod
 
@@ -63,6 +62,10 @@ class Publication:
         # Create publication directory if it does not exist
         Path(pub_directory).mkdir(parents=True, exist_ok=True)
         return pub_directory
+    
+    @property
+    def id(self) -> Optional[str]:
+        return self._doi if self._doi else self._eid
 
     @property
     def doi(self) -> Optional[str]:

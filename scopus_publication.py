@@ -1,9 +1,13 @@
+# Module: ScopusPublication
+# This module defines the ScopusPublication class which represents a publication from the Scopus API
+# It inherits from the Publication base class and includes methods for retrieving publication data,
+# references, citations, and co-citation/co-cited information from Scopus.
+
 from lxml import etree
 from datetime import datetime
-from collections import defaultdict
-import os, json, urllib.request, urllib.error, urllib.parse, time, xml.etree.ElementTree as ET
+import os, json, urllib.request, urllib.error, time, xml.etree.ElementTree as ET
 from dotenv import load_dotenv
-from publication import Publication, Citation
+from publication import Publication 
 
 # Load environment variables from .env file
 load_dotenv()
@@ -133,7 +137,7 @@ class ScopusPublication(Publication):
                                         year = None
 
                                     #add year
-                                    self._citations.append({'eid' : cit_eid, 'title' : title, 'year' : year})  # Update to _citations
+                                    self._citations.append({'eid': cit_eid, 'title': title, 'year': year})  # Update to _citations
 
     def download_citation_files(self):
         try:         
