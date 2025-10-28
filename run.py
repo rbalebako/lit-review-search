@@ -1,138 +1,215 @@
-import sys, os, math
+import os, math, time
+import csv
+from crossref_publication import CrossRefPublication 
+from scopus_publication import ScopusPublication
 
-# Prefer CrossRefPublication; fall back to ScopusPublication if CrossRef module not available
-USING_CROSSREF = False
-try:
-    from crossref_publication import CrossRefPublication as Publication
-    USING_CROSSREF = True
-    print("Defaulting to CrossRefPublication backend")
-except Exception:
-    try:
-        from scopus_publication import ScopusPublication as Publication
-        print("CrossRef backend not available — using ScopusPublication backend")
-    except Exception:
-        raise ImportError("Neither crossref_publication nor scopus_publication modules are importable")
 
-def get_strong_co_citing(publication, shared):
+
+
+def get_strong_co_citing(crossref_pub, shared):
     """
-    Return EIDs of publications that are strongly co-citing with the given publication.
+    Return DOIs of publications that are strongly co-citing with the given publication.
 
     Args:
-        publication: Publication-like object whose co-citing counts are examined.
+        crossref_pub: CrossRefPublication object whose co-citing counts are examined.
         shared: float fraction used to compute the minimum shared reference threshold.
 
     Returns:
-        List of EID strings for publications with co-citing counts >= threshold.
+        List of DOI strings for publications with co-citing counts >= threshold.
     """
-    min_count = math.ceil(publication.reference_count * shared)
+    min_count = math.ceil(crossref_pub.reference_count * shared)
 
-    eids = []
-    for eid, count in list(publication.co_citing_counts.items()):
-            if count >= min_count:
-                eids.append(eid)
+    dois = []
+    for doi, count in list(crossref_pub.co_citing_counts.items()):
+        if count >= min_count:
+            dois.append(doi)
 
-    return eids
+    return dois
 
-def get_strong_co_cited(publication, shared):
+def get_strong_co_cited(crossref_pub, shared):
     """
-    Return IDs of publications that are strongly co-cited with the given publication.
+    Return DOIs of publications that are strongly co-cited with the given publication.
 
     Args:
-        publication: Publication-like object whose co-cited counts are examined.
+        crossref_pub: CrossRefPublication object whose co-cited counts are examined.
         shared: float fraction used to compute the minimum shared citation threshold.
 
     Returns:
-        List of EID strings for publications with co-cited counts >= threshold.
+        List of DOI strings for publications with co-cited counts >= threshold.
     """
-    min_count = math.ceil(publication.citation_count * shared)
-    
-    eids = []
-    for eid, count in list(publication.co_cited_counts.items()):
+    min_count = math.ceil(crossref_pub.citation_count * shared)
+
+    dois = []
+    for doi, count in list(crossref_pub.co_cited_counts.items()):
         if count >= min_count:
-            eids.append(eid)
+            dois.append(doi)
 
-    return eids
+    return dois
 
-def get_strong_citation_relationship(publication, shared):
+def get_strong_citation_relationship(crossref_pub, shared):
     """
-    Populate scopus_pub.strong_cit_pubs with EIDs representing strong citation relationships.
+    Populate crossref_pub.strong_cit_pubs with DOIs representing strong citation relationships.
 
     This function:
-      - Initializes scopus_pub.strong_cit_pubs as a set.
-      - Adds direct references' and citations' EIDs.
-      - Unions in EIDs from strongly co-citing and strongly co-cited publications
-        (as computed by get_strong_co_citing and get_strong_co_cited).
+      - Initializes crossref_pub.strong_cit_pubs as a set.
+      - Adds direct references' and citations' DOIs.
+      - Unions in DOIs from strongly co-citing and strongly co-cited publications.
 
     Args:
-        publication: Publication-like object to update.
+        crossref_pub: CrossRefPublication object to update.
         shared: float fraction used by co-citing/co-cited threshold calculations.
 
     Returns:
-        None (updates scopus_pub in place).
+        set: Set of DOIs representing strong related publications.
     """
-    publication.strong_cit_pubs = set()
+    strong_related_pub_dois = set()
 
-    for reference in publication.references_:
-        publication.strong_cit_pubs.add(reference.get('eid') or reference.get('doi'))
+    # Add direct references
+    for reference in crossref_pub.references:
+        strong_related_pub_dois.add(reference['doi'])
 
-    for citation in publication.citations_:
-        publication.strong_cit_pubs.add(citation.get('eid') or citation.get('doi'))
+    # Add direct citations
+    for citation in crossref_pub.citations:
+        strong_related_pub_dois.add(citation.get('doi', citation.get('DOI')))
 
-    # ensure the results of co-citing/co-cited are added to the set
-    publication.strong_cit_pubs.update(get_strong_co_citing(publication, shared))
-    publication.strong_cit_pubs.update(get_strong_co_cited(publication, shared))
+    # Add strongly co-citing publications
+    strong_related_pub_dois = strong_related_pub_dois.union(get_strong_co_citing(crossref_pub, shared))
 
-    # with open(os.path.join('data', eid, 'top_shared_' + str(top) + '_' + citation_type + '.txt'), 'w') as o:
-    #     for top_pub in top_pubs:
-    #         o.write(top_pub)
-    #         o.write('\n')
+    # Add strongly co-cited publications
+    strong_related_pub_dois = strong_related_pub_dois.union(get_strong_co_cited(crossref_pub, shared))
+
+    return strong_related_pub_dois
+
+
+
+def check_publication_data(pub, identifier: str, service_name: str):
+    """Helper to check if a publication has valid citation data"""
+    try:
+        if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
+            ref_count = len(pub.references)
+            cite_count = len(pub.citations)
+            if ref_count > 0 and cite_count > 0:
+                print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
+                return pub
+            print(f"{service_name} missing citations/references for {identifier}")
+    except Exception as e:
+        print(f"Error accessing {service_name} data for {identifier}: {e}")
+    return None
+
+def create_publication(data_folder, identifier):
+    """Factory function that tries to create a CrossRef publication first,
+    falls back to Scopus if that fails or if CrossRef has no references/citations."""
+    
+    # Try CrossRef first
+    try:
+        pub = CrossRefPublication(data_folder, identifier)
+        if result := check_publication_data(pub, identifier, "CrossRef"):
+            return result
+    except Exception as e:
+        print(f"Failed to create CrossRef publication for {identifier}: {e}")
+    
+    # Try Scopus as fallback
+    try:
+        # TODO I don't have an API key, so this doesn't work
+        no_api=True
+        while (no_api):
+            pub = ScopusPublication(data_folder, identifier)
+    
+            if result := check_publication_data(pub, identifier, "Scopus"):
+                return result
+            
+    except Exception as e:
+        print(f"Failed to create Scopus publication for {identifier}: {e}")
+    
+    print(f"No valid publication data found for {identifier}")
+    return None
+
+
+def get_all_related_publications(seedids, output_folder):
+    """
+    Given a list of seed publication IDs, return the set of all related publication IDs.
+
+    Args:
+        seedids (list): List of seed publication IDs.
+
+    Returns:
+        set: Set of all related publication IDs.
+    """
+       
+    publications = {} # list of citations and references
+    all_related_ids = set()
+    for seed_id in seedids:
+        print(f"  Processing: {seed_id}")
+        pub = create_publication(output_folder, seed_id)
+        if pub:
+            publications[seed_id] = pub
+
+            # Display basic info
+            print(f"    Title: {pub.title}")
+            print(f"    Year: {pub.pub_year}")
+            print(f"    References: {pub.reference_count}")
+            print(f"    Citation count: {pub.get_citation_count()}")
+
+            #TODO create a function in ScopusPublication to get related IDs
+            related_ids = set(pub.references + pub.citations)     
+        
+            print(f'  {seed_id}: {len(related_ids)} related publications')
+            all_related_ids.update(related_ids)
+            time.sleep(1)  # TODO set Rate limiting
+    
+
+    return all_related_ids
+
+
 
 def main():
     """
-    Main entry point: load included studies, build Publication objects,
-    filter citations by year range, and compute strong citation relationships.
-
-    Configuration values (can be modified here):
-      - shared: threshold fraction for 'strong' co-citation/co-citing
-      - min_year: minimum publication year for citations (inclusive), None for no lower bound
-      - max_year: maximum publication year for citations (inclusive), None for no upper bound
-      - review: review identifier used to locate included studies
-      - studies_folder / output_folder: paths for inputs/outputs
-
-    Returns:
-        None
+    Main entry point using Crossref or Scopus to build citations list from seed DOI list
     """
     shared = 0.10
-    min_year = 2022  # Minimum year (inclusive)
-    max_year = 2025  # Maximum year (inclusive)
-    # Use None for no bound: min_year = None  or  max_year = None
+    # TODO either get these values from .env or here, but don't have them in both places
+    min_year = 2022
+    max_year = 2025
 
+    # TODO find a more obvious place or prompt the user for this
     review = 'firsttry'
     studies_folder = 'data/included-studies'
-    output_folder = 'data/scopus-download'
+    output_folder = 'data/crossref-download'
 
-    print('Getting list of included studies..')
+    print('Getting list of included studies...')
     seeds = []
-    with open(os.path.join(studies_folder, review, 'included.csv')) as f:
-        for line in f:
-            parts = line.strip().split(',')
-            if len(parts) >= 2:
-                # Extract EID (second column), remove quotes if present
-                eid = parts[1].strip().strip('"')
-                seeds.append(eid)
+    input_file = os.path.join(studies_folder, review, 'included.csv')
 
-    print('Getting citation space..')
-    scopus_pubs = {}
-    for seed in seeds:
-        # Instantiate the selected Publication class (CrossRefPublication or ScopusPublication)
-        scopus_pubs[seed] = Publication(output_folder, seed)
-        scopus_pubs[seed].filter_citations(min_year=min_year, max_year=max_year)
+    if not os.path.exists(input_file):
+        print(f'ERROR: Input file not found: {input_file}')
+        return
 
-    print('Getting strong citation relationships..')
-    for seed in seeds:
-        get_strong_citation_relationship(scopus_pubs[seed], shared)
+    # Use csv library for parsing
+    with open(input_file, 'r') as f:
+        reader = csv.reader(f)
+        header = next(reader)  # Skip header row
+        for row in reader:
+            if len(row) >= 3:
+                id = row[2].strip().strip('"')
+                if id:
+                    seeds.append(id)
 
+    print(f'Found {len(seeds)} seed publications')
 
+    all_related_ids = get_all_related_publications(seeds, output_folder)
+    print(f'\nTotal unique related publications: {len(all_related_ids)}')
 
-if __name__ == "__main__":
+    # Save results
+    output_file = os.path.join('data', review, 'crossref_related_dois.txt')
+    os.makedirs('data', exist_ok=True)
+
+    with open(output_file, 'w') as f:
+        for id in all_related_ids:
+            f.write(f'{id}\n')
+        print(f'\nResults saved to: {output_file}')
+
+    
+
+if __name__ == "__main__":   
     main()
+
