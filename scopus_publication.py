@@ -183,43 +183,7 @@ class ScopusPublication(Publication):
         # second delay for each request to Scopus
         time.sleep(5)
 
-    def filter_citations(self, min_year=None, max_year=None):
-        """
-        Filter citations by year range.
-
-        Args:
-            min_year (int, optional): Minimum publication year (inclusive).
-                                     If None, no lower bound is applied.
-            max_year (int, optional): Maximum publication year (inclusive).
-                                     If None, no upper bound is applied.
-
-        Examples:
-            filter_citations(min_year=2010, max_year=2020)  # 2010-2020 range
-            filter_citations(max_year=2015)                  # Up to 2015
-            filter_citations(min_year=2010)                  # From 2010 onwards
-        """
-        filtered_citations = []
-        for citation in self.citations_:
-            cite_year = citation.get('year')
-
-            # Skip citations with no year information
-            if cite_year is None:
-                continue
-
-            # Apply min_year filter
-            if min_year is not None and cite_year < min_year:
-                continue
-
-            # Apply max_year filter
-            if max_year is not None and cite_year > max_year:
-                continue
-
-            filtered_citations.append(citation)
-
-        self.citations_ = filtered_citations
-        self.get_cociting_eids()
-
-
+   
     def get_cociting_eids(self):
         for reference in self._references:  # Update to _references
             pub = ScopusPublication(self.data_folder_, reference['eid'])

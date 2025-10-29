@@ -110,8 +110,8 @@ def validated_publication(pub, identifier: str, service_name: str):
     """
     try:
         if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
-            ref_count = len(pub.references)
-            cite_count = len(pub.citations)
+            ref_count = len(pub.get_references())
+            cite_count = len(pub.get_citations())
             if ref_count > 0 and cite_count > 0:
                 print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
                 return True
@@ -148,7 +148,8 @@ def create_publication(data_folder, identifier, title=None):
                 pub.metadata
                 if pub.title and title.lower() in pub.title.lower():
                     print(f"Found in DBLP: {pub.dblp_key}")
-                    return pub
+                    if validated_publication(pub, identifier, "DLBP"):
+                        return pub
                 else:
                     print(f"DBLP title mismatch, trying other sources...")
         except Exception as e:
@@ -236,7 +237,7 @@ def read_seed_csv(input_file):
             # Assuming columns are named 'DOI', 'EID', and 'Title'
             id = row.get('DOI', '').strip() or row.get('EID', '').strip()
             title = row.get('Title', '').strip()
-            if id:
+            if id or title:
                 seeds.append((id, title))
     
     return seeds

@@ -6,11 +6,25 @@ from pathlib import Path
 from abc import abstractmethod
 import csv
 import os
+from requests import get
+from dotenv import load_dotenv
 
-@dataclass
-class Citation:
-    id: str  # DOI or EID depending on implementation
-    year: Optional[int] = None
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Get OpenCitations API key from environment variable
+OPENCITATIONS_API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
+if not OPENCITATIONS_API_KEY:
+    raise ValueError(
+        "OPENCITATIONS_API_KEY not found in environment variables. "
+        "Please create a .env file with your API key. "
+        "See .env.example for template."
+    )
+
+# for opencitation
+HTTP_HEADERS = {"authorization": OPENCITATIONS_API_KEY}
+
 
 class Publication:
     """Base class for publication data with common functionality"""
@@ -20,8 +34,8 @@ class Publication:
     _eid: Optional[str]
     _data_folder: str
     _pub_directory: str
-    _references: List[Citation]
-    _citations: List[Citation]
+    _references: List[str]
+    _citations: List[str]
     _co_citing_counts: defaultdict
     _co_cited_counts: defaultdict
     _abstract: str
@@ -86,14 +100,14 @@ class Publication:
         return len(self._citations)
     
     @property
-    def references(self) -> List[Citation]:
+    def references(self) -> List[str]:
         """Access to publication references with lazy loading."""
         if not self._references:
             self._references = self.get_references()
         return self._references
         
     @property
-    def citations(self) -> List[Citation]:
+    def citations(self) -> List[str]:
         """Access to publication citations with lazy loading."""
         if not self._citations:
             self._citations = self.get_citations()
@@ -140,7 +154,7 @@ class Publication:
             print(f"Error appending publication {pub_id} to CSV: {e}")
 
 
-    def get_references(self) -> List['CrossRefPublication.Citation']:
+    def get_references(self) -> List[str]:
         """
         CrossrefCommons does not have a get reference function, so we use OpenCitations API here.
         https://api.opencitations.net/index/v2
@@ -153,7 +167,7 @@ class Publication:
         list_of_dois = self._list_from_opencitations_json(field="cited", data=response.json())
         return list_of_dois
 
-    def get_citations(self) -> List['CrossRefPublication.Citation']:
+    def get_citations(self) -> List[str]:
         """
         constitute the incoming citations of that identified bibliographic entity
         Example: /citations/doi:10.1108/jd-12-2013-0166 

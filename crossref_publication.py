@@ -1,28 +1,12 @@
-from dataclasses import dataclass
-from datetime import datetime
-from collections import defaultdict
-import os, json, urllib.request, urllib.error, urllib.parse, time
-from typing import Optional, List
+import os, json, urllib.request, urllib.parse, time
+from typing import Optional
 import re
-import crossref_commons.retrieval
-from requests import get
 from dotenv import load_dotenv
 import requests
-from publication import Publication, Citation
+from publication import Publication
 import html  # unescape HTML entities
 
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Get OpenCitations API key from environment variable
-OPENCITATIONS_API_KEY = os.getenv('OPENCITATIONS_API_KEY', '')
-if not OPENCITATIONS_API_KEY:
-    raise ValueError(
-        "OPENCITATIONS_API_KEY not found in environment variables. "
-        "Please create a .env file with your API key. "
-        "See .env.example for template."
-    )
 
 # CrossRef API configuration
 CROSSREF_BASE_URL = 'https://api.crossref.org'
@@ -35,8 +19,7 @@ if MAILTO:
 # Rate limiting: CrossRef allows 50 req/sec for polite pool, 5 req/sec otherwise
 RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
 
-# for opencitation
-HTTP_HEADERS = {"authorization": OPENCITATIONS_API_KEY}
+
 
 
 class CrossRefPublication(Publication):
@@ -81,6 +64,7 @@ class CrossRefPublication(Publication):
         """
         Extract title, abstract, and publication year from metadata.
         If abstract is missing in CrossRef metadata, attempt to scrape it from the DOI landing page.
+        Also populates references and citations from OpenCitations.
         """
         # Ensure metadata is loaded
         if not self._metadata:
@@ -92,16 +76,16 @@ class CrossRefPublication(Publication):
         # Extract title
         titles = self._metadata.get('title', [])
         if titles:
-            self.title_ = titles[0]
+            self._title = titles[0]
 
         # Extract abstract (if available)
-        self.abstract_ = self._metadata.get('abstract', '') or ''
+        self._abstract = self._metadata.get('abstract', '') or ''
         # If abstract is empty, try scraping from DOI landing page
-        if not self.abstract_ and self._doi:
+        if not self._abstract and self._doi:
             try:
                 scraped = self._scrape_abstract_from_doi(self._doi)
                 if scraped:
-                    self.abstract_ = scraped
+                    self._abstract = scraped
             except Exception as e:
                 # don't fail hard on scraping errors
                 print(f"Warning: failed to scrape abstract for {self._doi}: {e}")
@@ -111,9 +95,15 @@ class CrossRefPublication(Publication):
         if pub_date and 'date-parts' in pub_date:
             date_parts = pub_date['date-parts'][0]
             if date_parts:
-                self.pub_year_ = date_parts[0]
+                self._pub_year = date_parts[0]
+        
+        # Populate references and citations
+        try:
+            self._references = self.get_references()
+            self._citations = self.get_citations()
+        except Exception as e:
+            print(f"Warning: Could not fetch references/citations for {self._doi}: {e}")
 
-    
     @classmethod
     def _extract_doi(self, id_string: str) -> Optional[str]:
         """Extract DOI from a given identifier string."""

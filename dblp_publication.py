@@ -109,10 +109,7 @@ class DBLPPublication(Publication):
                 metadata['venue'] = (self._get_text(pub_elem, 'journal') or 
                                    self._get_text(pub_elem, 'booktitle'))
                 metadata['doi'] = self._get_text(pub_elem, 'ee')
-                metadata['url'] = self._get_text(pub_elem, 'url')
-                metadata['pages'] = self._get_text(pub_elem, 'pages')
-                metadata['volume'] = self._get_text(pub_elem, 'volume')
-                metadata['number'] = self._get_text(pub_elem, 'number')
+ 
             
             return metadata
             
@@ -143,6 +140,7 @@ class DBLPPublication(Publication):
         Populates internal fields (_title, _pub_year, _abstract) from
         the metadata dictionary. Attempts to fetch abstract from DOI
         if available, since DBLP typically doesn't include abstracts.
+        Also populates references and citations if available.
         """
         if not self._metadata:
             return
@@ -163,57 +161,15 @@ class DBLPPublication(Publication):
                 self._abstract = self._fetch_abstract_from_doi(doi)
             except Exception as e:
                 print(f"Warning: Could not fetch abstract for {self.dblp_key}: {e}")
-    
-    def _fetch_abstract_from_doi(self, doi_url: str) -> str:
-        """
-        Attempt to fetch abstract from DOI URL by scraping publisher page.
         
-        Extracts the DOI from the URL, follows the DOI redirect to the
-        publisher's page, and attempts to scrape the abstract from
-        common meta tag locations.
-        
-        Args:
-            doi_url (str): Full DOI URL from DBLP (e.g., from 'ee' field)
-            
-        Returns:
-            str: Abstract text if found and valid (>= 50 chars), empty string otherwise
-        """
-        # Extract DOI from URL if needed
-        doi_match = re.search(r'10\.\d{4,}/[^\s]+', doi_url)
-        if not doi_match:
-            return ''
-        
-        doi = doi_match.group(0)
-        
-        # Use similar scraping approach as CrossRefPublication
+        # Populate references and citations
         try:
-            response = requests.get(f"https://doi.org/{doi}", 
-                                   timeout=15, 
-                                   headers={'User-Agent': 'Mozilla/5.0'})
-            response.raise_for_status()
-            
-            # Look for abstract in meta tags
-            patterns = [
-                r'<meta\s+name=["\']citation_abstract["\']\s+content=["\'](.*?)["\']',
-                r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']',
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, response.text, flags=re.I | re.S)
-                if match:
-                    abstract = match.group(1)
-                    # Clean up HTML entities
-                    abstract = re.sub(r'<[^>]+>', '', abstract)
-                    abstract = re.sub(r'\s+', ' ', abstract).strip()
-                    if len(abstract) >= 50:
-                        return abstract
-            
-            return ''
-            
-        except Exception:
-            return ''
-    
-    
+            self._references = self.get_references()
+            self._citations = self.get_citations()
+        except Exception as e:
+            print(f"Warning: Could not fetch references/citations for {self.dblp_key}: {e}")
+
+
     @property
     def title(self):
         """
