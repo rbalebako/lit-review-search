@@ -96,6 +96,7 @@ def check_publication_data(pub, identifier: str, service_name: str):
         print(f"Error accessing {service_name} data for {identifier}: {e}")
     return None
 
+
 def create_publication(data_folder, identifier):
     """Factory function that tries to create a CrossRef publication first,
     falls back to Scopus if that fails or if CrossRef has no references/citations."""
@@ -110,8 +111,8 @@ def create_publication(data_folder, identifier):
     
     # Try Scopus as fallback
     try:
-        # TODO I don't have an API key, so this doesn't work
-        no_api=True
+        # TODO remove this hack for when the API key doesn't work
+        no_api=False
         while (no_api):
             pub = ScopusPublication(data_folder, identifier)
     
@@ -128,9 +129,11 @@ def create_publication(data_folder, identifier):
 def get_all_related_publications(seedids, output_folder):
     """
     Given a list of seed publication IDs, return the set of all related publication IDs.
+    Side effect: saves the list in the output_folder
 
     Args:
         seedids (list): List of seed publication IDs.
+        output_fodler: Where to save information about the seedids
 
     Returns:
         set: Set of all related publication IDs.
@@ -150,10 +153,12 @@ def get_all_related_publications(seedids, output_folder):
             print(f"    References: {pub.reference_count}")
             print(f"    Citation count: {pub.get_citation_count()}")
 
-            #TODO create a function in ScopusPublication to get related IDs
+            # Create a unique list of cited and referenced publications for this seed
             related_ids = set(pub.references + pub.citations)     
         
             print(f'  {seed_id}: {len(related_ids)} related publications')
+
+            # Create a unique list of related ids for all seeds
             all_related_ids.update(related_ids)
             time.sleep(1)  # TODO set Rate limiting
     
@@ -172,13 +177,14 @@ def main():
     max_year = 2025
 
     # TODO find a more obvious place or prompt the user for this
-    review = 'firsttry'
-    studies_folder = 'data/included-studies'
-    output_folder = 'data/crossref-download'
+    reviewname = 'firsttry'
+    studies_folder = f'data/{reviewname}/seed-studies'
+    output_folder = f'data/{reviewname}/related-ids'
 
-    print('Getting list of included studies...')
+
+    print('Getting list of seed studies...')
     seeds = []
-    input_file = os.path.join(studies_folder, review, 'included.csv')
+    input_file = os.path.join(studies_folder, reviewname, 'included.csv')
 
     if not os.path.exists(input_file):
         print(f'ERROR: Input file not found: {input_file}')
@@ -200,7 +206,8 @@ def main():
     print(f'\nTotal unique related publications: {len(all_related_ids)}')
 
     # Save results
-    output_file = os.path.join('data', review, 'crossref_related_dois.txt')
+    # TODO the path is not specific to the run, so we will want it eventuallly to be in a subfolder of
+    output_file = os.path.join('data',  'crossref_related_dois.txt')
     os.makedirs('data', exist_ok=True)
 
     with open(output_file, 'w') as f:

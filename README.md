@@ -172,12 +172,12 @@ Basic workflow using only citation network expansion.
 shared = 0.10               # Co-citation threshold (10%)
 year = 2013                 # Filter citations before this year
 review = '84925226708'      # Review identifier (folder name)
-studies_folder = 'data/included-studies'
+studies_folder = 'data/seed'
 output_folder = 'data/scopus-download'
 ```
 
 **Workflow:**
-1. Load seed papers from `data/included-studies/{review}/included.csv`
+1. Load seed papers from `data/seed/{review}/included.csv`
 2. For each seed, create ScopusPublication object (downloads metadata)
 3. Filter citations by year
 4. Compute strong citation relationships for each seed
@@ -266,19 +266,13 @@ shared = 0.10                # Co-citation threshold (10%)
 min_year = 2010              # Minimum year
 max_year = 2020              # Maximum year
 review = 'crossref-review'   # Review identifier (folder name)
-studies_folder = 'data/included-studies'
+studies_folder = 'data/seed'
 output_folder = 'data/crossref-download'
 ```
 
-**Input Format (`included.csv`):**
-```csv
-Title,DOI
-"Paper Title 1","10.1037/0003-066X.59.1.29"
-"Paper Title 2","10.1234/example.doi"
-```
 
 **Workflow:**
-1. Load seed papers from `data/included-studies/{review}/included.csv`
+1. Load seed papers from `data/seed/{review}/included.csv`
 2. For each seed, create CrossRefPublication object (downloads metadata)
 3. Extract references (works cited)
 4. Filter by year range
@@ -317,10 +311,10 @@ This allows you to:
 Create a CSV file with seed publications. The file uses a **unified format** that works with both Scopus and CrossRef:
 
 ```bash
-mkdir -p data/included-studies/my-review
+mkdir -p data/seed/my-review
 ```
 
-Create `data/included-studies/my-review/included.csv`:
+Create `data/seed/my-review/included.csv`:
 ```csv
 Title,EID,DOI
 "First Seed Paper","85012345678","10.1037/0003-066X.59.1.29"
@@ -347,8 +341,8 @@ Title,EID,DOI
 
 **Finding DOIs:**
 1. Search for paper on CrossRef.org, Google Scholar, or journal website
-2. DOI format: `10.xxxx/xxxxxx`
-3. Example: `10.1037/0003-066X.59.1.29`
+2. DOI format: `DOI:10.xxxx/xxxxxx`
+3. Example: `DOI:10.1037/0003-066X.59.1.29`
 
 ### Step 2: Configure Environment Variables
 
@@ -364,10 +358,11 @@ cp .env.example .env
 
 ### Step 3: Configure Run Script
 
+TODO run.py does not currently take these values from the command line
 Edit `run.py` (or `run_keyword.py`):
 ```python
 review = 'my-review'  # Must match folder name in step 1
-studies_folder = 'data/included-studies'
+studies_folder = 'data/seed'
 output_folder = 'data/scopus-download'
 shared = 0.10    # Co-citation threshold (10%)
 
@@ -375,11 +370,6 @@ shared = 0.10    # Co-citation threshold (10%)
 min_year = 2010  # Minimum year, use None for no lower bound
 max_year = 2020  # Maximum year, use None for no upper bound
 
-# Examples:
-# min_year = 2010, max_year = 2020  # Only citations from 2010-2020
-# min_year = None, max_year = 2015  # All citations up to 2015
-# min_year = 2010, max_year = None  # All citations from 2010 onwards
-# min_year = None, max_year = None  # No year filtering
 ```
 
 ### Step 4: Run the Pipeline
@@ -414,10 +404,10 @@ python3 run_topic_model.py
 Use the **same unified CSV format** as Scopus. CrossRef scripts read the DOI column (third column):
 
 ```bash
-mkdir -p data/included-studies/crossref-review
+mkdir -p data/seed/crossref-review
 ```
 
-Create `data/included-studies/crossref-review/included.csv`:
+Create `data/seed/crossref-review/included.csv`:
 ```csv
 Title,EID,DOI
 "First Seed Paper","85012345678","10.1037/0003-066X.59.1.29"
@@ -447,7 +437,7 @@ This enables "polite pool" access with higher rate limits (50 req/sec vs 5 req/s
 Edit `run_crossref.py`:
 ```python
 review = 'crossref-review'  # Must match folder name
-studies_folder = 'data/included-studies'
+studies_folder = 'data/seed'
 output_folder = 'data/crossref-download'
 shared = 0.10    # Co-citation threshold (10%)
 
@@ -561,7 +551,7 @@ max_year = 2020  # Maximum publication year
 review = '84925226708'  # Folder name for this literature review
                         # Can be any identifier, not necessarily a Scopus ID
 
-studies_folder = 'data/included-studies'
+studies_folder = 'data/seed'
                 # Contains {review}/included.csv with seed papers
 
 output_folder = 'data/scopus-download'
@@ -701,7 +691,7 @@ lit-review-search/
 ├── run_topic_model.py             # Pipeline with topic modeling
 │
 └── data/
-    ├── included-studies/
+    ├── seed/
     │   └── {review_id}/
     │       └── included.csv       # INPUT: Seed papers
     │

@@ -4,6 +4,8 @@ from typing import Optional, List
 from collections import defaultdict
 from pathlib import Path
 from abc import abstractmethod
+import csv
+import os
 
 @dataclass
 class Citation:
@@ -113,5 +115,41 @@ class Publication:
             filtered_citations.append(citation)
             
         self._citations = filtered_citations
+    
+    def append_to_csv(self, csv_file_path: str):
+        """
+        Append publication information to a CSV file.
+        
+        Creates the file with headers if it doesn't exist.
+        Appends a row with id, title, year, abstract.
+        
+        Args:
+            csv_file_path (str): Path to the CSV file to append to.
+        """
+        # Determine the ID (use DOI if available, otherwise EID)
+        pub_id = self._doi if self._doi else self._eid
+        
+        # Check if file exists to determine if we need to write headers
+        file_exists = os.path.exists(csv_file_path)
+        
+        try:
+            with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['id', 'title', 'year', 'abstract']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                # Write header if file is new
+                if not file_exists:
+                    writer.writeheader()
+                
+                # Write publication data
+                writer.writerow({
+                    'id': pub_id,
+                    'title': self._title,
+                    'year': self._pub_year,
+                    'abstract': self._abstract
+                })
+                
+        except Exception as e:
+            print(f"Error appending publication {pub_id} to CSV: {e}")
 
 

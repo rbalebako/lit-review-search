@@ -9,6 +9,7 @@ from requests import get
 from dotenv import load_dotenv
 import requests
 from publication import Publication, Citation
+import html  # unescape HTML entities
 
 
 # Load environment variables from .env file
@@ -57,6 +58,8 @@ class CrossRefPublication(Publication):
                 print(f"Error fetching metadata for {self._doi}: {e}")
                 self._metadata = {}
         return self._metadata
+    
+    #TODO add publisher, created->date-parts, 
 
     def get_references(self) -> List['CrossRefPublication.Citation']:
         """
@@ -101,20 +104,34 @@ class CrossRefPublication(Publication):
     def extract_metadata(self):
         """
         Extract title, abstract, and publication year from metadata.
+        If abstract is missing in CrossRef metadata, attempt to scrape it from the DOI landing page.
         """
-        if not hasattr(self, 'metadata_'):
+        # Ensure metadata is loaded
+        if not self._metadata:
+            _ = self.metadata
+
+        if not self._metadata:
             return
 
         # Extract title
-        titles = self.metadata_.get('title', [])
+        titles = self._metadata.get('title', [])
         if titles:
             self.title_ = titles[0]
 
         # Extract abstract (if available)
-        self.abstract_ = self.metadata_.get('abstract', '')
+        self.abstract_ = self._metadata.get('abstract', '') or ''
+        # If abstract is empty, try scraping from DOI landing page
+        if not self.abstract_ and self._doi:
+            try:
+                scraped = self._scrape_abstract_from_doi(self._doi)
+                if scraped:
+                    self.abstract_ = scraped
+            except Exception as e:
+                # don't fail hard on scraping errors
+                print(f"Warning: failed to scrape abstract for {self._doi}: {e}")
 
         # Extract publication year
-        pub_date = self.metadata_.get('published', {}) or self.metadata_.get('created', {})
+        pub_date = self._metadata.get('published', {}) or self._metadata.get('created', {})
         if pub_date and 'date-parts' in pub_date:
             date_parts = pub_date['date-parts'][0]
             if date_parts:
@@ -290,3 +307,56 @@ class CrossRefPublication(Publication):
         except Exception as e:
             print(f'Error searching for author "{author_name}": {e}')
             return []
+
+    def _scrape_abstract_from_doi(self, doi: str) -> Optional[str]:
+        """
+        Attempt to fetch and extract an abstract from the DOI landing page.
+
+        Strategy:
+          - GET https://doi.org/{doi} (follow redirects)
+          - Look for common meta tags and HTML containers:
+            - <meta name="description" content="...">
+            - <meta property="og:description" content="...">
+            - <meta name="citation_abstract" content="...">
+            - <div class="abstract">...</div> (or similar)
+          - Strip HTML tags and unescape entities.
+
+        Returns:
+            str or None: extracted abstract text or None if not found.
+        """
+        try:
+            url = f"https://doi.org/{doi}"
+            resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+            resp.raise_for_status()
+            text = resp.text
+
+            # common meta and container regexes
+            patterns = [
+                r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']',
+                r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']',
+                r'<meta\s+name=["\']citation_abstract["\']\s+content=["\'](.*?)["\']',
+                r'<meta\s+name=["\']dc\.description["\']\s+content=["\'](.*?)["\']',
+                r'(<div[^>]*(?:class|id)=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?</div>)',
+                r'(<section[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?</section>)'
+            ]
+
+            for pat in patterns:
+                m = re.search(pat, text, flags=re.I | re.S)
+                if m:
+                    candidate = m.group(1)
+                    # if whole container matched, strip tags
+                    if candidate:
+                        # remove HTML tags
+                        cleaned = re.sub(r'<[^>]+>', ' ', candidate)
+                        cleaned = html.unescape(cleaned)
+                        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                        # Heuristic: ignore very short matches
+                        if len(cleaned) >= 50:
+                            return cleaned
+
+            return None
+
+        except Exception as e:
+            # swallow errors, return None to allow fallback
+            print(f"Warning: error scraping DOI {doi}: {e}")
+            return None
