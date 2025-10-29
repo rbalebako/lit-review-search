@@ -86,35 +86,20 @@ class Publication:
         return len(self._citations)
     
     @property
-    @abstractmethod
     def references(self) -> List[Citation]:
-        """Access to publication references. Child classes must implement loading logic."""
-        pass
+        """Access to publication references with lazy loading."""
+        if not self._references:
+            self._references = self.get_references()
+        return self._references
         
     @property
-    @abstractmethod
     def citations(self) -> List[Citation]:
-        """Access to publication citations. Child classes must implement loading logic."""
-        pass
-    
-    def filter_citations(self, min_year=None, max_year=None):
-        """Filter citations by year range."""
-        filtered_citations = []
-        for citation in self._citations:
-            cite_year = citation.year
-            
-            if cite_year is None:
-                continue
-                
-            if min_year is not None and cite_year < min_year:
-                continue
-                
-            if max_year is not None and cite_year > max_year:
-                continue
-                
-            filtered_citations.append(citation)
-            
-        self._citations = filtered_citations
+        """Access to publication citations with lazy loading."""
+        if not self._citations:
+            self._citations = self.get_citations()
+        return self._citations
+
+   
     
     def append_to_csv(self, csv_file_path: str):
         """
@@ -153,5 +138,31 @@ class Publication:
                 
         except Exception as e:
             print(f"Error appending publication {pub_id} to CSV: {e}")
+
+
+    def get_references(self) -> List['CrossRefPublication.Citation']:
+        """
+        CrossrefCommons does not have a get reference function, so we use OpenCitations API here.
+        https://api.opencitations.net/index/v2
+
+        all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
+        """
+        api_call = f"https://api.opencitations.net/index/v2/references/doi:{self._doi}?format=json"
+        response = get(api_call, headers=HTTP_HEADERS)
+        print(f"Calling {api_call} for references")
+        list_of_dois = self._list_from_opencitations_json(field="cited", data=response.json())
+        return list_of_dois
+
+    def get_citations(self) -> List['CrossRefPublication.Citation']:
+        """
+        constitute the incoming citations of that identified bibliographic entity
+        Example: /citations/doi:10.1108/jd-12-2013-0166 
+        """
+        api_call = f"https://api.opencitations.net/index/v2/citations/doi:{self._doi}?format=json"
+        response = get(api_call, headers=HTTP_HEADERS)
+        list_of_dois  = self._list_from_opencitations_json(field="citing", data=response.json()) 
+        return list_of_dois 
+    
+
 
 

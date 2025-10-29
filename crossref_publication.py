@@ -46,45 +46,21 @@ class CrossRefPublication(Publication):
         super().__init__(data_folder, doi=doi)
         self._metadata = None  # Declare Crossref-specific attribute
 
-        if download:
+        if download: #TODO check the logic we probably don't want this
             self.metadata  # Trigger metadata download
 
     @property
     def metadata(self):
         if self._metadata is None:
             try:
+                self.extract_metadata()
                 self._metadata = crossref_commons.retrieval.get_publication_as_json(self._doi)  # Use parent's _doi
             except requests.exceptions.RequestException as e:
-                print(f"Error fetching metadata for {self._doi}: {e}")
+                print(f"Error fetching metadata from crossref_commons for {self._doi}: {e}")
                 self._metadata = {}
         return self._metadata
     
-    #TODO add publisher, created->date-parts, 
-
-    def get_references(self) -> List['CrossRefPublication.Citation']:
-        """
-        CrossrefCommons does not have a get reference function, so we use OpenCitations API here.
-        https://api.opencitations.net/index/v2
-
-        all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
-        """
-        api_call = f"https://api.opencitations.net/index/v2/references/doi:{self._doi}?format=json"
-        response = get(api_call, headers=HTTP_HEADERS)
-        print(f"Calling {api_call} for references")
-        list_of_dois = self._list_from_opencitations_json(field="cited", data=response.json())
-        return list_of_dois
-
-    def get_citations(self) -> List['CrossRefPublication.Citation']:
-        """
-        constitute the incoming citations of that identified bibliographic entity
-        Example: /citations/doi:10.1108/jd-12-2013-0166 
-        """
-        api_call = f"https://api.opencitations.net/index/v2/citations/doi:{self._doi}?format=json"
-        response = get(api_call, headers=HTTP_HEADERS)
-        list_of_dois  = self._list_from_opencitations_json(field="citing", data=response.json()) 
-        return list_of_dois 
-    
-
+   
     @property
     def title(self):
         return self.metadata.get('title', [None])[0]
@@ -137,71 +113,6 @@ class CrossRefPublication(Publication):
             if date_parts:
                 self.pub_year_ = date_parts[0]
 
-    def filter_citations(self, min_year=None, max_year=None):
-        """
-        Filter citations by year range.
-
-        Args:
-            min_year (int, optional): Minimum publication year (inclusive).
-            max_year (int, optional): Maximum publication year (inclusive).
-
-        Note: Since we don't have full citation data from CrossRef API
-        (requires membership), this is a placeholder for when citation
-        data is obtained from other sources (e.g., OpenCitations).
-        """
-        filtered_citations = []
-        for citation in self.citations_:
-            cite_year = citation.get('year')
-
-            if cite_year is None:
-                continue
-
-            if min_year is not None and cite_year < min_year:
-                continue
-
-            if max_year is not None and cite_year > max_year:
-                continue
-
-            filtered_citations.append(citation)
-
-        self.citations_ = filtered_citations
-        # Note: Co-citing calculation would happen here if we had citation data
-
-
-
-
-    def get_cociting_ids(self):
-        """
-        Calculate co-citing relationships.
-
-        Note: This requires citation data which is not freely available
-        from CrossRef API without Cited-by membership.
-        """
-        # Placeholder - would need citation data to implement
-        pass
-
-    def get_co_cited_ids(self):
-        """
-        Calculate co-cited relationships.
-
-        Note: This requires analyzing citations of citing papers.
-        """
-        # Placeholder - would need citation data to implement
-        pass
-
-    @property
-    def references(self) -> List[Citation]:
-        """Lazy-loaded access to references."""
-        if not self._references:  # This will check both None and empty array
-            self._references = self.get_references()
-        return self._references
-
-    @property 
-    def citations(self) -> List[Citation]:
-        """Lazy-loaded access to citations."""
-        if not self._citations:
-            self._citations =self.get_citations()
-        return self._citations
     
     @classmethod
     def _extract_doi(self, id_string: str) -> Optional[str]:
