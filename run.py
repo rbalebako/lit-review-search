@@ -110,9 +110,10 @@ def validated_publication(pub, identifier: str, service_name: str):
     """
     try:
         if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
-            ref_count = len(pub.get_references())
-            cite_count = len(pub.get_citations())
-            if ref_count > 0 and cite_count > 0:
+            ref_count =  pub.reference_count
+            cite_count = pub.citation_count
+            # Does citation count need to be greater than 0?  What if no one has cited it
+            if cite_count > 0:
                 print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
                 return True
             print(f"{service_name} missing citations/references for {identifier}")
@@ -121,16 +122,17 @@ def validated_publication(pub, identifier: str, service_name: str):
     return False
 
 
-def create_publication(data_folder, identifier, title=None):
+def create_publication(data_folder, doi=None, eid=None, title=None):
     """
     Factory function that tries to create publications in order:
     1. DBLP (if title provided) - for computer science publications
-    2. CrossRef - general academic publications
-    3. Scopus - as final fallback
+    2. CrossRef (if DOI provided) - general academic publications
+    3. Scopus (if EID provided) - as final fallback
     
     Args:
         data_folder (str): Folder for storing publication data
-        identifier (str): Publication identifier (DOI, EID, etc.)
+        doi (str, optional): DOI identifier
+        eid (str, optional): EID identifier (Scopus)
         title (str, optional): Publication title for DBLP search
         
     Returns:
@@ -139,53 +141,50 @@ def create_publication(data_folder, identifier, title=None):
     
     # Try DBLP first if title is provided
     if title:
-        try:
-            print(f"Searching DBLP for: {title}")
-            dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
-            if dblp_results:
-                pub = dblp_results[0]
-                # Trigger metadata download
-                pub.metadata
-                if pub.title and title.lower() in pub.title.lower():
-                    print(f"Found in DBLP: {pub.dblp_key}")
-                    if validated_publication(pub, identifier, "DLBP"):
-                        return pub
+        print(f"** Searching DBLP for: {title}")
+        dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
+        if dblp_results:
+            pub = dblp_results[0]
+            # Trigger metadata download
+            pub.metadata
+            doi = pub.doi if doi is None else doi
+            if pub.title and title.lower() in pub.title.lower():
+                print(f"Found in DBLP: {pub.dblp_key}")
+                if validated_publication(pub, doi or eid or title, "DBLP"):
+                    return pub   
                 else:
-                    print(f"DBLP title mismatch, trying other sources...")
-        except Exception as e:
-            print(f"DBLP search failed for '{title}': {e}")
+                    print(f"** DBLP search did not return references '{title}': {e}")
     
-    # Try CrossRef second
-    try:
-        pub = CrossRefPublication(data_folder, identifier)
-        if validated_publication(pub, identifier, "CrossRef"):
-            return pub
-    except Exception as e:
-        print(f"Failed to create CrossRef publication for {identifier}: {e}")
+    # Try CrossRef second if DOI is provided
+    if doi:
+        print(f"** Searching Crossref for: {doi}")
+        pubcrossref = CrossRefPublication(data_folder, doi)
+        if validated_publication(pubcrossref, doi, "CrossRef"):
+            return pubcrossref
+        else:
+            print(f"** Did not find references for {doi} in Crossref")
     
-    # Try Scopus as fallback
-    try:
-        # TODO remove this hack for when the API key doesn't work
-        no_api=False
-        while (no_api):
-            pub = ScopusPublication(data_folder, identifier)
+    # Try Scopus as fallback if EID is provided
+    if eid:
+        print(f"** Searching Scopus for: {eid}")
+        pubscopus = ScopusPublication(data_folder, eid)
+        if validated_publication(pubscopus, eid, "Scopus"):
+            return pubscopus       
+        else:
+            print(f"** Failed to create Scopus publication for {eid}: {e}")
     
-            if validated_publication(pub, identifier, "Scopus"):
-                return pub       
-    except Exception as e:
-        print(f"Failed to create Scopus publication for {identifier}: {e}")
-    
-    print(f"No valid publication data found for {identifier}")
+    print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
     return None
 
 
-def cache_pub_metadata(seed_id, output_file, title=None):
+def cache_pub_metadata(seed_doi, seed_eid, output_file, title=None):
     """
-    Given a seed publication ID, fetch and cache its metadata.
+    Given a seed publication identifiers, fetch and cache its metadata.
     Side effect: saves the metadata in the output_file
 
     Args:
-        seed_id (str): Seed publication ID
+        seed_doi (str): Seed publication DOI
+        seed_eid (str): Seed publication EID
         output_file (str): Where to save information about the seed
         title (str, optional): Publication title for reference
 
@@ -193,12 +192,12 @@ def cache_pub_metadata(seed_id, output_file, title=None):
         Publication: Publication object or None
     """
 
-    print(f"  Processing: {seed_id}")
+    print(f"  Processing DOI: {seed_doi}, EID: {seed_eid}")
         
     # Create file if it doesn't exist
     if not os.path.exists(output_file):
         open(output_file, 'w').close()
-    pub = create_publication(output_file, seed_id, title)
+    pub = create_publication(output_file, doi=seed_doi, eid=seed_eid, title=title)
 
     if pub:
         # save information about the seed publication
@@ -221,7 +220,7 @@ def read_seed_csv(input_file):
         input_file (str): Path to the CSV file containing seed publication IDs.
         
     Returns:
-        list: List of tuples (id, title) with seed publication data.
+        list: List of tuples (doi, eid, title) with seed publication data.
     """
     seeds = []
     print(f'Getting list of seed studies from {input_file}...')
@@ -235,10 +234,11 @@ def read_seed_csv(input_file):
         reader = csv.DictReader(f)
         for row in reader:
             # Assuming columns are named 'DOI', 'EID', and 'Title'
-            id = row.get('DOI', '').strip() or row.get('EID', '').strip()
+            doi = row.get('DOI', '').strip()
+            eid = row.get('EID', '').strip()
             title = row.get('Title', '').strip()
-            if id or title:
-                seeds.append((id, title))
+            if doi or eid or title:
+                seeds.append((doi, eid, title))
     
     return seeds
 
@@ -279,13 +279,13 @@ def main():
     print(f'Found {len(seeds)} seed publications')
 
     all_related_ids = set()
-    for seed_id, seed_title in seeds:
-        pub = cache_pub_metadata(seed_id, pubs_output_file, seed_title)
+    for seed_doi, seed_eid, seed_title in seeds:
+        pub = cache_pub_metadata(seed_doi, seed_eid, pubs_output_file, seed_title)
 
         # Create a unique list of cited and referenced publications for this seed
         if pub:
             related_ids = set(pub.references + pub.citations)     
-            print(f'  {seed_id}: {len(related_ids)} related publications')
+            print(f'  {seed_doi}: {len(related_ids)} related publications')
 
             # Create a unique list of related ids for all seeds
             all_related_ids.update(related_ids)

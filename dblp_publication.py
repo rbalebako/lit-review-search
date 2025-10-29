@@ -12,7 +12,7 @@ import requests
 import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 import os
-from publication import Publication, Citation
+from publication import Publication
 
 # Load environment variables
 load_dotenv()
@@ -108,9 +108,20 @@ class DBLPPublication(Publication):
                                       for author in pub_elem.findall('author')]
                 metadata['venue'] = (self._get_text(pub_elem, 'journal') or 
                                    self._get_text(pub_elem, 'booktitle'))
-                metadata['doi'] = self._get_text(pub_elem, 'ee')
- 
-            
+                
+                # Extract DOI from 'ee' field which contains URL like 'https://doi.org/10.1145/3576915.3623157'
+                ee_url = self._get_text(pub_elem, 'ee')
+                if ee_url:
+                    # Extract just the DOI part after '.org/'
+                    doi_match = re.search(r'\.org/(.+)$', ee_url)
+                    if doi_match:
+                        metadata['doi'] = doi_match.group(1)  # Get captured group (the DOI)
+                        self._doi = metadata['doi']
+                    else:
+                        # If pattern doesn't match, store the full URL as fallback
+                        metadata['doi'] = ee_url
+                        self._doi = ee_url
+
             return metadata
             
         except Exception as e:
@@ -153,15 +164,7 @@ class DBLPPublication(Publication):
         if year_str and year_str.isdigit():
             self._pub_year = int(year_str)
         
-        # DBLP typically doesn't include abstracts
-        # Try to get from DOI if available
-        doi = self._metadata.get('doi', '')
-        if doi and not self._abstract:
-            try:
-                self._abstract = self._fetch_abstract_from_doi(doi)
-            except Exception as e:
-                print(f"Warning: Could not fetch abstract for {self.dblp_key}: {e}")
-        
+    
         # Populate references and citations
         try:
             self._references = self.get_references()
