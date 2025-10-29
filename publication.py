@@ -121,7 +121,7 @@ class Publication:
         Append publication information to a CSV file.
         
         Creates the file with headers if it doesn't exist.
-        Appends a row with id, title, year, abstract.
+        Appends a row with id, title, year, abstract, citation_count, reference_count.
         
         Args:
             csv_file_path (str): Path to the CSV file to append to.
@@ -134,7 +134,7 @@ class Publication:
         
         try:
             with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['id', 'title', 'year', 'abstract']
+                fieldnames = ['id', 'title', 'year', 'abstract', 'citation_count', 'reference_count']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 
                 # Write header if file is new
@@ -146,7 +146,9 @@ class Publication:
                     'id': pub_id,
                     'title': self._title,
                     'year': self._pub_year,
-                    'abstract': self._abstract
+                    'abstract': self._abstract,
+                    'citation_count': self.citation_count,
+                    'reference_count': self.reference_count
                 })
                 
         except Exception as e:

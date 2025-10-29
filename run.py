@@ -82,19 +82,38 @@ def get_strong_citation_relationship(crossref_pub, shared):
 
 
 
-def check_publication_data(pub, identifier: str, service_name: str):
-    """Helper to check if a publication has valid citation data"""
+def validated_publication(pub, identifier: str, service_name: str):
+    """
+
+    Validate publication data for citation analysis.
+
+    This helper function checks if a publication object contains valid citation data
+    by verifying the presence of both references and citations.
+
+    Args:
+        pub: Publication object to validate. Should have 'metadata', 'references', 
+             and 'citations' attributes.
+        identifier (str): Unique identifier for the publication (e.g., DOI, PubMed ID).
+        service_name (str): Name of the service providing the publication data 
+                           (used for logging purposes).
+
+    Returns:
+        object or None: Returns the publication object if it has valid citation data
+                       (both references and citations present with count > 0), 
+                       otherwise returns None.
+        
+    """
     try:
         if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
             ref_count = len(pub.references)
             cite_count = len(pub.citations)
             if ref_count > 0 and cite_count > 0:
                 print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
-                return pub
+                return True
             print(f"{service_name} missing citations/references for {identifier}")
     except Exception as e:
         print(f"Error accessing {service_name} data for {identifier}: {e}")
-    return None
+    return False
 
 
 def create_publication(data_folder, identifier):
@@ -104,8 +123,8 @@ def create_publication(data_folder, identifier):
     # Try CrossRef first
     try:
         pub = CrossRefPublication(data_folder, identifier)
-        if result := check_publication_data(pub, identifier, "CrossRef"):
-            return result
+        if validated_publication(pub, identifier, "CrossRef"):
+            return pub
     except Exception as e:
         print(f"Failed to create CrossRef publication for {identifier}: {e}")
     
@@ -116,9 +135,8 @@ def create_publication(data_folder, identifier):
         while (no_api):
             pub = ScopusPublication(data_folder, identifier)
     
-            if result := check_publication_data(pub, identifier, "Scopus"):
-                return result
-            
+            if validated_publication(pub, identifier, "Scopus"):
+                return pub       
     except Exception as e:
         print(f"Failed to create Scopus publication for {identifier}: {e}")
     
@@ -126,7 +144,7 @@ def create_publication(data_folder, identifier):
     return None
 
 
-def get_all_related_publications(seedids, output_folder):
+def cache_pub_metadata(seed_id, output_folder):
     """
     Given a list of seed publication IDs, return the set of all related publication IDs.
     Side effect: saves the list in the output_folder
@@ -138,34 +156,67 @@ def get_all_related_publications(seedids, output_folder):
     Returns:
         set: Set of all related publication IDs.
     """
-       
-    publications = {} # list of citations and references
-    all_related_ids = set()
-    for seed_id in seedids:
-        print(f"  Processing: {seed_id}")
-        pub = create_publication(output_folder, seed_id)
-        if pub:
-            publications[seed_id] = pub
 
-            # Display basic info
-            print(f"    Title: {pub.title}")
-            print(f"    Year: {pub.pub_year}")
-            print(f"    References: {pub.reference_count}")
-            print(f"    Citation count: {pub.get_citation_count()}")
+    print(f"  Processing: {seed_id}")
+    pub = create_publication(output_folder, seed_id)
 
-            # Create a unique list of cited and referenced publications for this seed
-            related_ids = set(pub.references + pub.citations)     
-        
-            print(f'  {seed_id}: {len(related_ids)} related publications')
+    if pub:
+        # save information about the seed publication
+        pub.append_to_csv('output/publications.csv')
 
-            # Create a unique list of related ids for all seeds
-            all_related_ids.update(related_ids)
-            time.sleep(1)  # TODO set Rate limiting
+        # Display basic info
+        print(f"    Title: {pub.title}")
+        print(f"    Year: {pub.pub_year}")
+        print(f"    References: {pub.reference_count}")
+        print(f"    Citation count: {pub.get_citation_count()}")
+    return pub
+
+
+
+def read_seed_csv(input_file):
+    """
+    Read seed publication IDs from a CSV file.
     
+    Args:
+        input_file (str): Path to the CSV file containing seed publication IDs.
+        
+    Returns:
+        list: List of seed publication IDs (DOI or ID values from CSV).
+    """
+    seeds = []
+    
+    if not os.path.exists(input_file):
+        print(f'ERROR: Input file not found: {input_file}')
+        return seeds
+    
+    # Use csv library for parsing - simplified
+    with open(input_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Assuming third column is named 'DOI' or 'ID'
+            # Adjust key name based on your CSV header
+            id = row.get('DOI', '').strip() or row.get('ID', '').strip()
+            if id:
+                seeds.append(id)
+    
+    return seeds
 
-    return all_related_ids
+def save_related_ids_csv(all_related_ids, output_folder):
+    """
+    Save related publication IDs to a text file.
+    
+    Args:
+        all_related_ids (set): Set of related publication IDs to save.
+        output_folder (str): Directory where the output file will be saved.
+    """
+    output_file = os.path.join(output_folder, 'seed_related_ids.txt')
+    os.makedirs(output_folder, exist_ok=True)
 
-
+    with open(output_file, 'w') as f:
+        for id in all_related_ids:
+            f.write(f'{id}\n')
+    
+    print(f'Results saved to: {output_file}')
 
 def main():
     """
@@ -180,42 +231,30 @@ def main():
     reviewname = 'firsttry'
     studies_folder = f'data/{reviewname}/seed-studies'
     output_folder = f'data/{reviewname}/related-ids'
+    input_file = os.path.join(studies_folder, reviewname, 'included.csv')
 
 
     print('Getting list of seed studies...')
-    seeds = []
-    input_file = os.path.join(studies_folder, reviewname, 'included.csv')
-
-    if not os.path.exists(input_file):
-        print(f'ERROR: Input file not found: {input_file}')
-        return
-
-    # Use csv library for parsing
-    with open(input_file, 'r') as f:
-        reader = csv.reader(f)
-        header = next(reader)  # Skip header row
-        for row in reader:
-            if len(row) >= 3:
-                id = row[2].strip().strip('"')
-                if id:
-                    seeds.append(id)
-
+    seeds = read_seed_csv(input_file)
     print(f'Found {len(seeds)} seed publications')
 
-    all_related_ids = get_all_related_publications(seeds, output_folder)
+    all_related_ids = set()
+    for seed_id in seeds:
+        pub = cache_pub_metadata(seeds, output_folder)
+
+        # Create a unique list of cited and referenced publications for this seed
+        related_ids = set(pub.references + pub.citations)     
+        print(f'  {seed_id}: {len(related_ids)} related publications')
+
+        # Create a unique list of related ids for all seeds
+        all_related_ids.update(related_ids)
+        time.sleep(3)  # TODO set Rate limiting
+
+
     print(f'\nTotal unique related publications: {len(all_related_ids)}')
 
-    # Save results
-    # TODO the path is not specific to the run, so we will want it eventuallly to be in a subfolder of
-    output_file = os.path.join('data',  'crossref_related_dois.txt')
-    os.makedirs('data', exist_ok=True)
-
-    with open(output_file, 'w') as f:
-        for id in all_related_ids:
-            f.write(f'{id}\n')
-        print(f'\nResults saved to: {output_file}')
-
-    
+    # Save ids of pubs related to the seed
+    save_related_ids_csv(all_related_ids, output_folder)
 
 if __name__ == "__main__":   
     main()
