@@ -2,6 +2,10 @@ import os, math, time
 import csv
 from crossref_publication import CrossRefPublication 
 from scopus_publication import ScopusPublication
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 
@@ -222,13 +226,11 @@ def main():
     """
     Main entry point using Crossref or Scopus to build citations list from seed DOI list
     """
-    shared = 0.10
-    # TODO either get these values from .env or here, but don't have them in both places
-    min_year = 2022
-    max_year = 2025
+    # Load configuration from environment variables
+    min_year = int(os.getenv('MIN_YEAR', '2022'))
+    max_year = int(os.getenv('MAX_YEAR', '2025'))
+    reviewname = os.getenv('REVIEW_NAME', 'firsttry')
 
-    # TODO find a more obvious place or prompt the user for this
-    reviewname = 'firsttry'
     studies_folder = f'data/{reviewname}/seed-studies'
     output_folder = f'data/{reviewname}/related-ids'
     input_file = os.path.join(studies_folder, reviewname, 'included.csv')
@@ -255,6 +257,8 @@ def main():
 
     # Save ids of pubs related to the seed
     save_related_ids_csv(all_related_ids, output_folder)
+
+    
 
 if __name__ == "__main__":   
     main()
