@@ -38,7 +38,7 @@ def has_citations(pub, service_name: str):
     return False
 
 
-def find_publication_by_id(data_folder, id):
+def find_publication_by_id(id):
     """
     Search for a publication by identifier in DBLP or Scopus.
     
@@ -46,7 +46,6 @@ def find_publication_by_id(data_folder, id):
     trying DBLP first, then Scopus as fallback.
     
     Args:
-        data_folder (str): Directory for storing publication data
         id (str): Publication identifier (DOI, DBLP key, or Scopus EID)
         
     Returns:
@@ -56,20 +55,23 @@ def find_publication_by_id(data_folder, id):
         return None
         
     try:
-        pub = DBLPPublication(data_folder, id)  
+        pub = DBLPPublication(id)  
         if pub:
             return pub    
-        else:
-            pub = ScopusPublication(data_folder, id)
-            if pub:
-                return pub        
     except Exception as e:
-        print(f"** Error creating  publication for ID {id}: {e}")
+        print(f"** DBLP failed for ID {id}, trying Scopus: {e}")
+    
+    try:
+        pub = ScopusPublication(id)
+        if pub:
+            return pub
+    except Exception as e:
+        print(f"** Error creating Scopus publication for ID {id}: {e}")
     
     return None
 
 
-def find_publication_by_title(data_folder, title):
+def find_publication_by_title(title):
     """
     Search for a publication by title across multiple data sources.
     
@@ -77,32 +79,29 @@ def find_publication_by_title(data_folder, title):
     Returns the first result that has valid citation data.
     
     Args:
-        data_folder (str): Directory for storing publication data
         title (str): Publication title to search for
         
     Returns:
         Publication: First matching publication with citations, or None if not found
     """
-    # Try DBLP and Scopus first if title is provided
     if title:
         print(f"** Searching DBLP for: {title}")
-        dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
+        dblp_results = DBLPPublication.search_by_title(title, max_results=1)
         if dblp_results:
             pub_dblp = dblp_results[0]
-
             print(f"Found in DBLP: {pub_dblp.dblp_key}")
             return pub_dblp              
         
         print(f"** Searching Scopus for: {title}")
-        pub_scopus = ScopusPublication.search_by_title(title, data_folder)
+        pub_scopus = ScopusPublication.search_by_title(title)
         if pub_scopus and has_citations(pub_scopus, "Scopus"):
             return pub_scopus       
         else:
             print(f"** Search by title failed for Scopus or DBLP: {title}")
-
     
+    return None
 
-def create_publication(data_folder, doi=None, eid=None, title=None):
+def create_publication(doi=None, eid=None, title=None):
     """
     Factory function to create a publication object from available identifiers.
     
@@ -116,7 +115,6 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
     3. If EID provided: Search by EID in Scopus
     
     Args:
-        data_folder (str): Directory for storing publication data
         doi (str, optional): DOI identifier
         eid (str, optional): Scopus EID identifier
         title (str, optional): Publication title
@@ -137,7 +135,7 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
             continue
 
         print(f"** Searching by {name}: {value}")
-        pub = search_func(data_folder, value)
+        pub = search_func(value)
 
         if pub and has_citations(pub, f"search_by_{name}"):
             print(f"** Found valid publication by {name}: {value}")
@@ -292,7 +290,7 @@ def main():
     save_related_ids_csv(all_related_ids, related_output_file)
 
     for id in all_related_ids:
-        pub = find_publication_by_id(data_folder, id)
+        pub = find_publication_by_id(id)
         if pub:
             cache_pub_metadata(pub, pubs_output_file)
         
