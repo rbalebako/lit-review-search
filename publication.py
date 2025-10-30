@@ -5,6 +5,8 @@ import os
 from requests import get
 from dotenv import load_dotenv
 import re
+import requests
+import xml.etree.ElementTree as ET
 
 
 # Load environment variables from .env file
@@ -127,7 +129,9 @@ class Publication:
 
    
     @property
-    def absrtact(self) -> Optional[str]:
+    def abstract(self) -> Optional[str]:
+        if not self._abstract:
+            self._abstract = self._fetch_abstract_from_arxiv_by_title()
         return self._abstract
    
     
@@ -149,7 +153,7 @@ class Publication:
         
         try:
             with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['id', 'title', 'year', 'abstract', 'citation_count', 'reference_count']
+                fieldnames = ['title', 'doi', 'eid', 'dblp',  'year',  'citation_count', 'reference_count', 'url', 'abstract']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 
                 # Write header if file is new
@@ -158,10 +162,10 @@ class Publication:
                 
                 # Write publication data
                 writer.writerow({
+                    'title': self.title,
                     'doi': self.doi,
                     'eid': self.eid,
                     'dblp': self.dblp,
-                    'title': self.title,
                     'year': self.pub_year,
                     'citation_count': self.citation_count,
                     'reference_count': self.reference_count,
@@ -222,7 +226,7 @@ class Publication:
     
     def _fetch_abstract_from_arxiv(self, arxiv_id: str) -> Optional[str]:
         """
-        Fetch abstract directly from arXiv API.
+        Fetch abstract directly from arXiv API using arXiv ID.
         
         Args:
             arxiv_id (str): arXiv identifier (e.g., "2301.12345")
@@ -230,7 +234,78 @@ class Publication:
         Returns:
             str or None: Abstract text or None if not found
         """
-        pass
+        try:
+            # arXiv API endpoint
+            api_url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
+            resp = requests.get(api_url, timeout=15)
+            resp.raise_for_status()
+            
+            # Parse XML response
+            root = ET.fromstring(resp.content)
+            
+            # arXiv API uses Atom namespace
+            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            entry = root.find('atom:entry', ns)
+            
+            if entry is not None:
+                summary = entry.find('atom:summary', ns)
+                if summary is not None and summary.text:
+                    # Clean up whitespace
+                    abstract = re.sub(r'\s+', ' ', summary.text).strip()
+                    return abstract
+            
+            return None
+            
+        except Exception as e:
+            print(f"Warning: error fetching arXiv abstract for ID {arxiv_id}: {e}")
+            return None
+    
+    def _fetch_abstract_from_arxiv_by_title(self) -> Optional[str]:
+        """
+        Fetch abstract from arXiv by searching for the paper title.
+        
+        Uses the arXiv API search endpoint to find papers matching the title,
+        then retrieves the abstract from the first matching result.
+            
+        Returns:
+            str or None: Abstract text or None if not found
+        """
+        try:
+            # Clean title for search query
+            search_query = self.title.strip()
+            
+            # arXiv API search endpoint
+            api_url = f"http://export.arxiv.org/api/query?search_query=ti:{requests.utils.quote(search_query)}&max_results=1"
+            resp = requests.get(api_url, timeout=15)
+            resp.raise_for_status()
+            
+            # Parse XML response
+            root = ET.fromstring(resp.content)
+            
+            # arXiv API uses Atom namespace
+            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            entry = root.find('atom:entry', ns)
+            
+            if entry is not None:
+                # Verify title matches (case-insensitive partial match)
+                entry_title = entry.find('atom:title', ns)
+                if entry_title is not None and entry_title.text:
+                    entry_title_text = entry_title.text.strip().lower()
+                    search_title_lower = self.title.strip().lower()
+                    
+                    # Check if titles match (allow partial matching)
+                    if search_title_lower in entry_title_text or entry_title_text in search_title_lower:
+                        summary = entry.find('atom:summary', ns)
+                        if summary is not None and summary.text:
+                            # Clean up whitespace
+                            abstract = re.sub(r'\s+', ' ', summary.text).strip()
+                            return abstract
+            
+            return None
+            
+        except Exception as e:
+            print(f"Warning: error fetching arXiv abstract by title '{self.title}': {e}")
+            return None
 
 
 
