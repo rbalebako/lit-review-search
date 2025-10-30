@@ -26,14 +26,13 @@ def has_citations(pub, service_name: str):
         bool: True if publication has metadata and at least one citation, False otherwise
     """
     try:
-        if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
-            ref_count =  pub.reference_count
-            cite_count = pub.citation_count
-            # Does citation count need to be greater than 0?  What if no one has cited it
-            if cite_count > 0 or ref_count>0:
-                #print(f"Using {service_name}  (refs: {ref_count}, cites: {cite_count})")
-                return True
-            print(f"{service_name} missing citations/references for {pub.title}")
+        ref_count =  pub.reference_count
+        cite_count = pub.citation_count
+        # Does citation count need to be greater than 0?  What if no one has cited it
+        if cite_count > 0 or ref_count>0:
+            #print(f"Using {service_name}  (refs: {ref_count}, cites: {cite_count})")
+            return True
+        print(f"{service_name} missing citations/references for {pub.title}")
     except Exception as e:
         print(f"Error accessing {service_name} data for {pub.title}: {e}")
     return False
@@ -99,7 +98,7 @@ def find_publication_by_title(data_folder, title):
         if pub_scopus and has_citations(pub_scopus, "Scopus"):
             return pub_scopus       
         else:
-            print(f"** Failed to create Scopus or DBLP publication for title: {title}")
+            print(f"** Search by title failed for Scopus or DBLP: {title}")
 
     
 
@@ -171,7 +170,7 @@ def cache_pub_metadata(pub, output_file):
         Publication: The same publication object passed in
     """
 
-    print(f"  Processing DOI: {pub.doi}, title: {pub.titled}")
+    print(f"  Processing DOI: {pub.doi}, title: {pub.title}")
         
     # Create file if it doesn't exist
     if not os.path.exists(output_file):
@@ -278,7 +277,7 @@ def main():
 
         # Create a unique list of cited and referenced publications for this seed
         if pub:
-            cache_pub_metadata(pub) 
+            cache_pub_metadata(pub, pubs_output_file) 
             related_ids = set(pub.references + pub.citations)     
             print(f'  {seed_doi}: {len(related_ids)} related publications')
 
@@ -293,9 +292,9 @@ def main():
     save_related_ids_csv(all_related_ids, related_output_file)
 
     for id in all_related_ids:
-        pub = find_publication_by_id(id)
+        pub = find_publication_by_id(data_folder, id)
         if pub:
-            cache_pub_metadata(pub)
+            cache_pub_metadata(pub, pubs_output_file)
         
     
 

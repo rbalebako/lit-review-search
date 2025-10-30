@@ -25,28 +25,31 @@ RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
 class CrossRefPublication(Publication):
     """Represents a publication from CrossRef API with citation network data."""
 
-    def __init__(self, data_folder, doi):
+    def __init__(self, doi):
         # Fetch metadata during initialization
-        self.metadata = self._fetch_metadata_from_crossref()
+        self.metadata = self._fetch_metadata_from_crossref(doi)
   
         # Extract title, year, abstract from metadata
         self._extract_basic_metadata()
         
         # Call parent init
-        super().__init__(data_folder, doi=doi)
+        super().__init__(doi=doi)
 
 
-    def _fetch_metadata_from_crossref(self):
+    def _fetch_metadata_from_crossref(self, doi):
         """
         Fetch metadata from CrossRef API.
+        
+        Args:
+            doi (str): DOI to fetch metadata for
         
         Returns:
             dict: Publication metadata from CrossRef, or empty dict if fetch fails
         """
         try:
-            return crossref_commons.retrieval.get_publication_as_json(self._doi)
+            return crossref_commons.retrieval.get_publication_as_json(doi)
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching metadata from crossref_commons for {self._doi}: {e}")
+            print(f"Error fetching metadata from crossref_commons for {doi}: {e}")
             return {}
     
     def _extract_basic_metadata(self):
@@ -95,13 +98,12 @@ class CrossRefPublication(Publication):
         self._extract_basic_metadata()
 
     @staticmethod
-    def search_by_title(title, data_folder):
+    def search_by_title(title):
         """
         Search for publications by title using CrossRef API.
 
         Args:
             title (str): Title to search for
-            data_folder (str): Folder for caching data
 
         Returns:
             list: List of CrossRefPublication objects matching the search
@@ -123,7 +125,7 @@ class CrossRefPublication(Publication):
             for item in data.get('message', {}).get('items', []):
                 doi = item.get('DOI')
                 if doi:
-                    pub = CrossRefPublication(data_folder, doi, download=False)
+                    pub = CrossRefPublication(doi)
                     pub.metadata = item  # Set metadata directly
                     pub._extract_basic_metadata()  # Extract fields
                     results.append(pub)
@@ -136,13 +138,12 @@ class CrossRefPublication(Publication):
             return []
 
     @staticmethod
-    def search_by_author(author_name, data_folder, max_results=10):
+    def search_by_author(author_name, max_results=10):
         """
         Search for publications by author name using CrossRef API.
 
         Args:
             author_name (str): Author name to search for
-            data_folder (str): Folder for caching data
             max_results (int): Maximum number of results to return
 
         Returns:
@@ -164,7 +165,7 @@ class CrossRefPublication(Publication):
             for item in data.get('message', {}).get('items', []):
                 doi = item.get('DOI')
                 if doi:
-                    pub = CrossRefPublication(data_folder, doi, download=False)
+                    pub = CrossRefPublication(doi)
                     pub.metadata = item  # Set metadata directly
                     pub._extract_basic_metadata()  # Extract fields
                     results.append(pub)

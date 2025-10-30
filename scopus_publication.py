@@ -27,13 +27,19 @@ CURRENT_YEAR = int(os.getenv('CURRENT_YEAR', datetime.now().year))
 class ScopusPublication(Publication):
     """Represents a publication from Scopus API with citation network data."""
     
-    def __init__(self, data_folder, eid):
-        super().__init__(data_folder, eid=eid)
-        # Don't set eid_ since parent manages _eid
+    def __init__(self, eid):
+        """
+        Initialize ScopusPublication object.
+        
+        Args:
+            eid (str): The EID (Elsevier ID) of the publication.
+        """
+        # Call parent init
+        super().__init__(eid=eid)
         
         # Initialize Scopus specific attributes
-        self.reference_xml = None  # Add proper declaration
-        self.citations_folder = os.path.join(self._pub_directory, 'citations')
+        self.reference_xml = None
+        # Note: citations_folder removed since no local storage is used
         
         # Get reference data
         reference_file = os.path.join(self._pub_directory, 'references.xml')
@@ -186,13 +192,12 @@ class ScopusPublication(Publication):
 
 
     @staticmethod
-    def search_by_title(title: str, data_folder: str):
+    def search_by_title(title: str):
         """
         Search for a publication by title using Scopus API.
         
         Args:
             title (str): Title to search for
-            data_folder (str): Folder for storing publication data
             
         Returns:
             ScopusPublication or None: First matching publication or None if not found
@@ -219,7 +224,7 @@ class ScopusPublication(Publication):
                         eid = first_result['eid'].replace('2-s2.0-', '')
                         
                         # Create and return ScopusPublication object
-                        pub = ScopusPublication(data_folder, eid)
+                        pub = ScopusPublication(eid)
                         return pub
             
             print(f"No results found in Scopus for title: {title}")

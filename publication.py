@@ -34,15 +34,13 @@ class Publication:
     # Class-level declarations of all attributes
     _doi: Optional[str]
     _eid: Optional[str]
-    _data_folder: str
-    _pub_directory: str
     _references: List[str]
     _citations: List[str]
     _abstract: str
     _title: str
     _pub_year: Optional[int] # to keep the method lightweieght, only set and create folder if needed.
     
-    def __init__(self, data_folder: str, doi: Optional[str] = None, eid: Optional[str] = None):
+    def __init__(self, doi: Optional[str] = None, eid: Optional[str] = None):
         if not doi and not eid:
             raise ValueError("Must provide either DOI or EID")
             
@@ -55,8 +53,6 @@ class Publication:
         self._abstract = ''
         self._title = ''
         self._pub_year = None
-        self._data_folder = data_folder
-        self._pub_directory = None
         
     
     
@@ -66,7 +62,7 @@ class Publication:
         Args:
             data_folder: Base directory for storing publication data
             
-        Returns:
+        Returns:create_pub_directory
             String path to publication-specific directory
         """
         # Use EID if available, otherwise DOI, and ensure filename safety using Path
@@ -221,6 +217,8 @@ class Publication:
         Returns:
             str or None: extracted abstract text or None if not found.
         """
+        return None
+    
         # Check if this is an arXiv DOI
         arxiv_match = re.search(r'arxiv\.org/abs/(\d+\.\d+)', doi.lower())
         if arxiv_match:

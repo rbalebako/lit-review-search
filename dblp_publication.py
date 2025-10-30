@@ -31,18 +31,17 @@ class DBLPPublication(Publication):
     authors: List[str]
     venue: str
     
-    def __init__(self, data_folder, dblp_key):
+    def __init__(self, dblp_key):
         """
         Initialize DBLPPublication object.
         
         Args:
-            data_folder (str): Path to folder for storing cached data
             dblp_key (str): DBLP key of the publication (e.g., "conf/icse/SmithJ20")
         """
         self.dblp_key = dblp_key
         
         # Call parent init first to initialize _abstract, _title, etc.
-        super().__init__(data_folder, doi=dblp_key)
+        super().__init__(doi=dblp_key)
         
         # Now fetch and extract metadata directly
         self._fetch_metadata_from_dblp()
@@ -153,7 +152,7 @@ class DBLPPublication(Publication):
         return 0
     
     @staticmethod
-    def search_by_title(title: str, data_folder: str, max_results: int = 10):
+    def search_by_title(title: str, max_results: int = 10):
         """
         Search for publications by title using DBLP search API.
         
@@ -162,7 +161,6 @@ class DBLPPublication(Publication):
         
         Args:
             title (str): Title keywords to search for
-            data_folder (str): Folder for caching publication data
             max_results (int): Maximum number of results to return (default: 10)
             
         Returns:
@@ -189,7 +187,7 @@ class DBLPPublication(Publication):
                 if info is not None:
                     key = info.find('key')
                     if key is not None and key.text:
-                        pub = DBLPPublication(data_folder, key.text)
+                        pub = DBLPPublication(key.text)
                         results.append(pub)
             
             return results
@@ -199,7 +197,7 @@ class DBLPPublication(Publication):
             return []
     
     @staticmethod
-    def search_by_author(author_name: str, data_folder: str, max_results: int = 10):
+    def search_by_author(author_name: str, max_results: int = 10):
         """
         Search for publications by author using DBLP search API.
         
@@ -208,7 +206,6 @@ class DBLPPublication(Publication):
         
         Args:
             author_name (str): Author name to search for
-            data_folder (str): Folder for caching publication data
             max_results (int): Maximum number of results to return (default: 10)
             
         Returns:
@@ -234,7 +231,7 @@ class DBLPPublication(Publication):
                 if info is not None:
                     key = info.find('key')
                     if key is not None and key.text:
-                        pub = DBLPPublication(data_folder, key.text, download=False)
+                        pub = DBLPPublication(key.text)
                         results.append(pub)
             
             return results
