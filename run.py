@@ -335,14 +335,18 @@ def main():
             pub = find_publication_by_doi(id.replace('doi:', ''))
         elif id.startswith('2-s2.0-'):
             pub = find_publication_by_eid(id)
-        else:
-            # Try DOI first, then EID
-            pub = find_publication_by_doi(id)
-            if not pub:
-                pub = find_publication_by_eid(id)
         
         if pub:
-            cache_pub_metadata(pub, pubs_output_file)
+            # Check if publication year is within the specified range
+            if pub.pub_year is not None:
+                if min_year <= pub.pub_year <= max_year:
+                    cache_pub_metadata(pub, pubs_output_file)
+                else:
+                    print(f"  Skipping {id}: year {pub.pub_year} outside range [{min_year}, {max_year}]")
+            else:
+                # If year is unknown, cache it anyway with a warning
+                print(f"  Warning: Unknown publication year for {id}, caching anyway")
+                cache_pub_metadata(pub, pubs_output_file)
         
     
 
