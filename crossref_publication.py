@@ -82,12 +82,8 @@ class CrossRefPublication(Publication):
             if date_parts:
                 self._pub_year = date_parts[0]
         
-        # Populate references and citations
-        try:
-            self._references = self.get_references()
-            self._citations = self.get_citations()
-        except Exception as e:
-            print(f"Warning: Could not fetch references/citations for {self._doi}: {e}")
+        # Do not populate references or citations unless explicitely requested.
+        # this is to reduce API calls
 
 
     @staticmethod

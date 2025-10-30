@@ -183,19 +183,47 @@ class ScopusPublication(Publication):
         # second delay for each request to Scopus
         time.sleep(5)
 
-   
-    def get_cociting_eids(self):
-        for reference in self._references:  # Update to _references
-            pub = ScopusPublication(self.data_folder_, reference['eid'])
 
-            for citation in pub.citations:
-                if citation['eid'] != self.eid_:
-                    self._co_citing_counts[citation['eid']] += 1  # Update to _co_citing_counts
-
-    def get_co_cited_eids(self):
-        for citation in self.citations_:
-            pub = ScopusPublication(self.data_folder_, citation['eid'])
-
-            for reference in pub.references:
-                if reference['eid'] != self.eid_:
-                    self._co_cited_counts[citation['eid']] += 1  # Update to _co_cited_counts
+    @staticmethod
+    def search_by_title(title: str, data_folder: str):
+        """
+        Search for a publication by title using Scopus API.
+        
+        Args:
+            title (str): Title to search for
+            data_folder (str): Folder for storing publication data
+            
+        Returns:
+            ScopusPublication or None: First matching publication or None if not found
+        """
+        try:
+            import urllib.parse
+            
+            # URL encode the title for the search query
+            encoded_title = urllib.parse.quote(title)
+            search_url = f'https://api.elsevier.com/content/search/scopus?query=TITLE({encoded_title})&count=1&apiKey={API_KEY}'
+            
+            # Make the API request
+            response = urllib.request.urlopen(search_url, timeout=30)
+            data = json.loads(response.read())
+            
+            # Parse the response
+            if 'search-results' in data and 'entry' in data['search-results']:
+                entries = data['search-results']['entry']
+                if entries and len(entries) > 0:
+                    first_result = entries[0]
+                    
+                    # Extract EID from the result
+                    if 'eid' in first_result:
+                        eid = first_result['eid'].replace('2-s2.0-', '')
+                        
+                        # Create and return ScopusPublication object
+                        pub = ScopusPublication(data_folder, eid)
+                        return pub
+            
+            print(f"No results found in Scopus for title: {title}")
+            return None
+            
+        except Exception as e:
+            print(f"Error searching Scopus for title '{title}': {e}")
+            return None

@@ -39,8 +39,6 @@ class Publication:
     _pub_directory: str
     _references: List[str]
     _citations: List[str]
-    _co_citing_counts: defaultdict
-    _co_cited_counts: defaultdict
     _abstract: str
     _title: str
     _pub_year: Optional[int]
@@ -56,8 +54,6 @@ class Publication:
         # Initialize common attributes
         self._references = []
         self._citations = []
-        self._co_citing_counts = defaultdict(int)
-        self._co_cited_counts = defaultdict(int)
         self._abstract = ''
         self._title = ''
         self._pub_year = None

@@ -11,83 +11,7 @@ load_dotenv()
 
 
 
-def get_strong_co_citing(crossref_pub, shared):
-    """
-    Return DOIs of publications that are strongly co-citing with the given publication.
-
-    Args:
-        crossref_pub: CrossRefPublication object whose co-citing counts are examined.
-        shared: float fraction used to compute the minimum shared reference threshold.
-
-    Returns:
-        List of DOI strings for publications with co-citing counts >= threshold.
-    """
-    min_count = math.ceil(crossref_pub.reference_count * shared)
-
-    dois = []
-    for doi, count in list(crossref_pub.co_citing_counts.items()):
-        if count >= min_count:
-            dois.append(doi)
-
-    return dois
-
-def get_strong_co_cited(crossref_pub, shared):
-    """
-    Return DOIs of publications that are strongly co-cited with the given publication.
-
-    Args:
-        crossref_pub: CrossRefPublication object whose co-cited counts are examined.
-        shared: float fraction used to compute the minimum shared citation threshold.
-
-    Returns:
-        List of DOI strings for publications with co-cited counts >= threshold.
-    """
-    min_count = math.ceil(crossref_pub.citation_count * shared)
-
-    dois = []
-    for doi, count in list(crossref_pub.co_cited_counts.items()):
-        if count >= min_count:
-            dois.append(doi)
-
-    return dois
-
-def get_strong_citation_relationship(crossref_pub, shared):
-    """
-    Populate crossref_pub.strong_cit_pubs with DOIs representing strong citation relationships.
-
-    This function:
-      - Initializes crossref_pub.strong_cit_pubs as a set.
-      - Adds direct references' and citations' DOIs.
-      - Unions in DOIs from strongly co-citing and strongly co-cited publications.
-
-    Args:
-        crossref_pub: CrossRefPublication object to update.
-        shared: float fraction used by co-citing/co-cited threshold calculations.
-
-    Returns:
-        set: Set of DOIs representing strong related publications.
-    """
-    strong_related_pub_dois = set()
-
-    # Add direct references
-    for reference in crossref_pub.references:
-        strong_related_pub_dois.add(reference['doi'])
-
-    # Add direct citations
-    for citation in crossref_pub.citations:
-        strong_related_pub_dois.add(citation.get('doi', citation.get('DOI')))
-
-    # Add strongly co-citing publications
-    strong_related_pub_dois = strong_related_pub_dois.union(get_strong_co_citing(crossref_pub, shared))
-
-    # Add strongly co-cited publications
-    strong_related_pub_dois = strong_related_pub_dois.union(get_strong_co_cited(crossref_pub, shared))
-
-    return strong_related_pub_dois
-
-
-
-def validated_publication(pub, identifier: str, service_name: str):
+def has_citations(pub,  service_name: str):
     """
 
     Validate publication data for citation analysis.
@@ -98,7 +22,6 @@ def validated_publication(pub, identifier: str, service_name: str):
     Args:
         pub: Publication object to validate. Should have 'metadata', 'references', 
              and 'citations' attributes.
-        identifier (str): Unique identifier for the publication (e.g., DOI, PubMed ID).
         service_name (str): Name of the service providing the publication data 
                            (used for logging purposes).
 
@@ -114,20 +37,74 @@ def validated_publication(pub, identifier: str, service_name: str):
             cite_count = pub.citation_count
             # Does citation count need to be greater than 0?  What if no one has cited it
             if cite_count > 0:
-                print(f"Using {service_name} for {identifier} (refs: {ref_count}, cites: {cite_count})")
+                #print(f"Using {service_name}  (refs: {ref_count}, cites: {cite_count})")
                 return True
-            print(f"{service_name} missing citations/references for {identifier}")
+            print(f"{service_name} missing citations/references for {pub.title}")
     except Exception as e:
-        print(f"Error accessing {service_name} data for {identifier}: {e}")
+        print(f"Error accessing {service_name} data for {pub.title}: {e}")
     return False
 
 
+def find_publication_by_id(data_folder, id):
+    """
+    Search for a publication by id in DBLP and Scopus.
+    
+    Args:
+        data_folder (str): Folder for storing publication data
+        id (str): ID identifier to search for
+        
+    Returns:
+        Publication: ScopusPublication object if found and has citations, None otherwise
+    """
+    if not id:
+        return None
+        
+    try:
+        pub = DBLPPublication(data_folder, id)  
+        if pub:
+            return pub    
+        else:
+            pub = ScopusPublication(data_folder, id)
+            if pub:
+                return pub        
+    except Exception as e:
+        print(f"** Error creating  publication for ID {id}: {e}")
+    
+    return None
+
+
+def find_publication_by_title(data_folder, title):
+      # Try DBLP and Scopus first if title is provided
+    if title:
+        print(f"** Searching DBLP for: {title}")
+        dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
+        if dblp_results:
+            pub_dblp = dblp_results[0]
+            # Trigger metadata download
+            pub_dblp.metadata
+            # Extract DOI and EID from DBLP if not already provided
+            doi = pub_dblp.doi if doi is None else doi
+            eid = pub_dblp.eid if eid is None else eid
+            if pub_dblp.title and title.lower() in pub_dblp.title.lower():
+                print(f"Found in DBLP: {pub_dblp.dblp_key}")
+                if has_citations(pub_dblp, "DBLP"):
+                    return pub_dblp   
+                else:
+                    print(f"** DBLP search did not return references for '{title}'")
+        
+        print(f"** Searching Scopus for: {title}")
+        pub_scopus = ScopusPublication.search_by_title(title, data_folder)
+        if pub_scopus and has_citations(pub_scopus, "Scopus"):
+            return pub_scopus       
+        else:
+            print(f"** Failed to create Scopus publication for title: {title}")
+
+    
+
 def create_publication(data_folder, doi=None, eid=None, title=None):
     """
-    Factory function that tries to create publications in order:
-    1. DBLP (if title provided) - for computer science publications
-    2. CrossRef (if DOI provided) - general academic publications
-    3. Scopus (if EID provided) - as final fallback
+    Factory function that tries to create publications in order based on the data available
+    TODO(maybe we can check the format of the id to see which one it is?)
     
     Args:
         data_folder (str): Folder for storing publication data
@@ -138,46 +115,28 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
     Returns:
         Publication: Publication object or None if creation fails
     """
+  
+    while (!has_citations(pub)):
+        if doi:
+            pub = find_publication_by_id(data_folder, doi)
+            title = pub.title
+        if eid:
+            pub = find_publication_by_id(data_folder, eid)
+            title = pub.title
+        if title
+            pub_by_eid = find_publication_by_title(data_folder, title )    
+            doi = pub.doi
+        
+    if not pub:
+        print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
+        return None
     
-    # Try DBLP first if title is provided
-    if title:
-        print(f"** Searching DBLP for: {title}")
-        dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
-        if dblp_results:
-            pub = dblp_results[0]
-            # Trigger metadata download
-            pub.metadata
-            doi = pub.doi if doi is None else doi
-            if pub.title and title.lower() in pub.title.lower():
-                print(f"Found in DBLP: {pub.dblp_key}")
-                if validated_publication(pub, doi or eid or title, "DBLP"):
-                    return pub   
-                else:
-                    print(f"** DBLP search did not return references '{title}': {e}")
-    
-    # Try CrossRef second if DOI is provided
-    if doi:
-        print(f"** Searching Crossref for: {doi}")
-        pubcrossref = CrossRefPublication(data_folder, doi)
-        if validated_publication(pubcrossref, doi, "CrossRef"):
-            return pubcrossref
-        else:
-            print(f"** Did not find references for {doi} in Crossref")
-    
-    # Try Scopus as fallback if EID is provided
-    if eid:
-        print(f"** Searching Scopus for: {eid}")
-        pubscopus = ScopusPublication(data_folder, eid)
-        if validated_publication(pubscopus, eid, "Scopus"):
-            return pubscopus       
-        else:
-            print(f"** Failed to create Scopus publication for {eid}")
-    
-    print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
-    return None
+    else:
+       pub.has_citations()
 
+    return pub
 
-def cache_pub_metadata(seed_doi, seed_eid, output_file, title=None):
+def cache_pub_metadata(pub, output_file, title=None):
     """
     Given a seed publication identifiers, fetch and cache its metadata.
     Side effect: saves the metadata in the output_file
@@ -197,7 +156,7 @@ def cache_pub_metadata(seed_doi, seed_eid, output_file, title=None):
     # Create file if it doesn't exist
     if not os.path.exists(output_file):
         open(output_file, 'w').close()
-    pub = create_publication(output_file, doi=seed_doi, eid=seed_eid, title=title)
+
 
     if pub:
         # save information about the seed publication
@@ -280,10 +239,11 @@ def main():
 
     all_related_ids = set()
     for seed_doi, seed_eid, seed_title in seeds:
-        pub = cache_pub_metadata(seed_doi, seed_eid, pubs_output_file, seed_title)
+        pub = create_publication(pubs_output_file, doi=seed_doi, eid=seed_eid, title=seed_title)
 
         # Create a unique list of cited and referenced publications for this seed
         if pub:
+            cache_pub_metadata(pub) 
             related_ids = set(pub.references + pub.citations)     
             print(f'  {seed_doi}: {len(related_ids)} related publications')
 
@@ -297,6 +257,11 @@ def main():
     # Save ids of pubs related to the seed
     save_related_ids_csv(all_related_ids, related_output_file)
 
+    for (id in all_related_ids):
+        pub = find_publication_by_id(id)
+        if pub:
+            cache_pub_metadata(pub)
+        
     
 
 if __name__ == "__main__":   

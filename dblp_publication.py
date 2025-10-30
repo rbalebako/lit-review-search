@@ -164,14 +164,8 @@ class DBLPPublication(Publication):
         if year_str and year_str.isdigit():
             self._pub_year = int(year_str)
         
-    
-        # Populate references and citations
-        try:
-            self._references = self.get_references()
-            self._citations = self.get_citations()
-        except Exception as e:
-            print(f"Warning: Could not fetch references/citations for {self.dblp_key}: {e}")
-
+        # Do not populate references or citations unless explicitely requested.
+        # this is to reduce API calls
 
     @property
     def title(self):
