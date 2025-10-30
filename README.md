@@ -256,10 +256,10 @@ lit-review-search/
 - Check that publications have valid year metadata
 - Publications with unknown years are included by default
 
-## Contributing
+## History and Motivation
 
-[Add contribution guidelines here]
+I originally forked this from janinaj/lit-review-search, with a strong desire to use the method described for a literature review.  However, I soon found that my biggest problem was finding the publications I wanted in Scopus.  (Of the 4 seed pubs, SCOPUS had only 1).  I then added crossref and DBLP search APIs.  These were more likely to find the publications, but did not contain references and citations.  
+It may have been easier to start by scraping Google or Arxiv after all. In this final implementation, I only scrape Arxiv to get the abstract, and even then I only get about 10% of abstracts.  
 
 ## License
-
-[Add license information here]
+GNU GENERAL PUBLIC LICENSE
