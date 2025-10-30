@@ -1,154 +1,265 @@
 # Literature Review Search Tool
 
-This tool provides a unified workflow for conducting systematic literature reviews using both CrossRef and Scopus APIs to build citation networks from seed publications.
+A unified workflow for conducting systematic literature reviews using CrossRef, Scopus, and DBLP APIs to build citation networks from seed publications.
 
 ## Overview
 
-The tool automatically:
+This tool automatically:
 1. Reads seed publication identifiers from a CSV file
-2. Fetches publication metadata, references, and citations from CrossRef (with Scopus fallback)
+2. Fetches publication metadata, references, and citations from multiple sources (CrossRef, Scopus, DBLP)
 3. Builds a network of related publications
-4. Exports results to CSV and text files for further analysis
+4. Filters publications by year range
+5. Exports results to CSV files for further analysis
 
-## Main Entry Point: run.py
+## Prerequisites
 
-`run.py` is the primary script for conducting literature reviews. It orchestrates the entire workflow:
+### API Keys
 
-### Workflow Steps
-
-1. **Load Seed Publications**: Reads DOIs/identifiers from `data/{reviewname}/seed-studies/{reviewname}/included.csv`
-2. **Fetch Metadata**: For each seed publication:
-   - Attempts to retrieve data from CrossRef API
-   - Falls back to Scopus API if CrossRef data is unavailable or incomplete
-   - Validates that both references and citations are present
-3. **Cache Publication Data**: Saves publication metadata (title, year, abstract, citation count) to `output/publications.csv`
-4. **Build Citation Network**: Collects all unique DOIs from references and citations
-5. **Export Results**: Saves list of related publication IDs to `data/{reviewname}/related-ids/seed_related_ids.txt`
-
-### Usage
-
-```bash
-python run.py
-```
-
-### Configuration
-
-Edit the `main()` function in `run.py` to configure:
-
-```python
-reviewname = 'firsttry'              # Name of your review project
-min_year = 2022                       # Minimum publication year
-max_year = 2025                       # Maximum publication year
-shared = 0.10                         # Threshold for co-citation analysis (10%)
-```
-
-### Input File Format
-
-The seed publications CSV should have columns including either `DOI` or `ID`:
-
-```csv
-Title,EID,DOI
-"Paper Title","Scopus EID","DOI"
-```
-
-### Output Files
-
-1. **`output/publications.csv`**: Metadata for all processed seed publications
-   - Columns: id, title, year, abstract, citation_count
-
-2. **`data/{reviewname}/related-ids/seed_related_ids.txt`**: List of all unique publication IDs related to seeds
-   - One DOI per line
-   - Includes all references and citations from seed publications
-
-## Key Features
-
-- **Dual API Support**: Automatically tries CrossRef first, falls back to Scopus
-- **Validation**: Ensures publications have both references and citations before including them
-- **Citation Network Analysis**: Functions for co-citation and bibliographic coupling analysis
-- **Rate Limiting**: Built-in delays to respect API rate limits
-- **Caching**: Stores downloaded data locally to avoid redundant API calls
-
-## Module Structure
-
-- **`publication.py`**: Base class for publications with common functionality
-- **`crossref_publication.py`**: CrossRef API implementation with OpenCitations integration
-- **`scopus_publication.py`**: Scopus API implementation
-- **`run.py`**: Main orchestration script
-
-## Key Functions in run.py
-
-- `read_seed_csv(input_file)`: Parse seed publication identifiers from CSV
-- `create_publication(data_folder, identifier)`: Factory function to create publication objects
-- `validated_publication(pub, identifier, service_name)`: Verify publication has valid citation data
-- `cache_pub_metadata(seed_id, output_folder)`: Fetch and save publication metadata
-- `save_related_ids_csv(all_related_ids, output_folder)`: Export related publication IDs
-- `get_strong_citation_relationship(pub, shared)`: Identify strongly-related publications
-
-## Requirements
-
-### Environment Variables
-
-Create a `.env` file with:
+Create a `.env` file in the project root with the following configuration:
 
 ```env
-OPENCITATIONS_API_KEY=your_opencitations_key
+# OpenCitations API Key (required for CrossRef citations/references)
+OPENCITATIONS_API_KEY=your_opencitations_key_here
+
+# CrossRef Configuration
 CROSSREF_MAILTO=your_email@example.com
-SCOPUS_API_KEY=your_scopus_key  # Optional, for Scopus fallback
+
+# Scopus API Key (optional, for Scopus fallback)
+SCOPUS_API_KEY=your_scopus_key_here
+
+# Review Configuration
+REVIEW_NAME=firsttry
+MIN_YEAR=2022
+MAX_YEAR=2025
 ```
+
+See `.env.example` for a template.
 
 ### Python Dependencies
 
 ```bash
-pip install python-dotenv
-pip install requests
-pip install crossref-commons
-pip install lxml  # For Scopus XML parsing
+pip install python-dotenv requests crossref-commons lxml
 ```
 
-## Advanced Usage
+## Main Entry Point: run.py
 
-### Co-Citation Analysis
+`run.py` is the primary script for conducting literature reviews.
 
-The tool includes functions for identifying publications with strong co-citation relationships:
+### Configuration
+
+All configuration is loaded from environment variables in `.env`:
+
+- **REVIEW_NAME**: Name of your review project (creates `data/{REVIEW_NAME}/` folder structure)
+- **MIN_YEAR**: Minimum publication year (inclusive) for filtering related publications
+- **MAX_YEAR**: Maximum publication year (inclusive) for filtering related publications
+
+### Input File Format
+
+Create a CSV file at `data/{REVIEW_NAME}/seeds.csv` with the following columns:
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| Title  | At least one | Publication title |
+| DOI    | At least one | Digital Object Identifier |
+| EID    | At least one | Scopus EID |
+
+Example:
+```csv
+Title,DOI,EID
+"Machine Learning in Healthcare","10.1234/example",""
+"Deep Learning for Diagnosis","","2-s2.0-85012345678"
+"AI Medical Applications","10.5678/sample",""
+```
+
+### Workflow
+
+#### 1. Process Seed Publications
+
+For each seed publication:
+1. **Search Strategy** (tries in order):
+   - Search by title in DBLP and Scopus
+   - Search by DOI in CrossRef
+   - Search by EID in Scopus
+2. **Validation**: Ensures publication has references OR citations
+3. **Metadata Extraction**: Retrieves title, year, abstract, authors, venue
+4. **Citation Network**: Collects all references and citations
+
+#### 2. Collect Related Publications
+
+- Aggregates all unique DOIs/EIDs from seed publications' references and citations
+- Saves to `data/{REVIEW_NAME}/seed_related_ids.txt`
+
+#### 3. Process Related Publications
+
+For each related publication:
+1. **Identify Source**: Determines if ID is DOI or EID
+2. **Fetch Metadata**: Retrieves publication details
+3. **Year Filtering**: Only caches publications within `[MIN_YEAR, MAX_YEAR]` range
+4. **Save**: Appends to publications CSV
+
+### Output Files
+
+#### `data/{REVIEW_NAME}/publications.csv`
+
+Contains metadata for all processed publications:
+
+| Column | Description |
+|--------|-------------|
+| title | Publication title |
+| doi | Digital Object Identifier |
+| eid | Scopus EID |
+| dblp | DBLP key |
+| year | Publication year |
+| citation_count | Number of citations |
+| reference_count | Number of references |
+| url | DOI URL |
+| abstract | Publication abstract (from arXiv if available) |
+
+#### `data/{REVIEW_NAME}/seed_related_ids.txt`
+
+Plain text file with one DOI/EID per line - all publications cited by or citing seed publications.
+
+### Usage
+
+```bash
+# 1. Configure .env file
+cp .env.example .env
+# Edit .env with your API keys and settings
+
+# 2. Prepare seed publications CSV
+mkdir -p data/myreview
+# Create data/myreview/seeds.csv with your seed publications
+
+# 3. Run the tool
+python run.py
+```
+
+### Example Output
+
+```
+Getting list of seed studies from data/firsttry/seeds.csv...
+Found 3 seed publications
+** Searching by title: Machine Learning in Healthcare
+** Searching DBLP for: Machine Learning in Healthcare
+Found in DBLP: conf/icml/SmithJ23
+** Found valid publication by title: Machine Learning in Healthcare
+  Processing DOI: 10.1145/3576915.3623157, title: Machine Learning in Healthcare
+    Title: Machine Learning in Healthcare
+    Year: 2023
+    References: 45
+    Citation count: 12
+  10.1145/3576915.3623157: 57 related publications
+
+Total unique related publications: 142
+Results saved to: data/firsttry/seed_related_ids.txt
+  Skipping doi:10.1234/old-paper: year 2015 outside range [2022, 2025]
+  Processing DOI: 10.5678/recent-paper, title: Recent Advances
+  ...
+```
+
+## Key Features
+
+### Multi-Source Search Strategy
+
+The tool intelligently searches across multiple academic databases:
+
+1. **DBLP**: Computer science publications, excellent for conference papers
+2. **CrossRef**: General academic publications, comprehensive DOI coverage
+3. **Scopus**: Broad academic coverage, strong citation data
+
+### Automatic Fallback
+
+If one data source fails or has incomplete data, the tool automatically tries alternative sources using available identifiers (DOI, EID, title).
+
+### Citation Network Building
+
+- Uses OpenCitations API for CrossRef citation/reference data
+- Aggregates forward citations (papers citing this work)
+- Aggregates backward citations (papers this work references)
+
+### Year-Based Filtering
+
+Related publications are filtered by year to focus on recent literature:
+- Publications outside `[MIN_YEAR, MAX_YEAR]` are logged but not cached
+- Publications with unknown years are cached with a warning
+
+### Abstract Enrichment
+
+Automatically attempts to fetch abstracts from arXiv when not available from primary sources.
+
+## Advanced Features
+
+### Rate Limiting
+
+Built-in 3-second delay between API requests (configurable in code):
 
 ```python
-# Get publications that strongly co-cite the target paper
-strong_co_citing = get_strong_co_citing(pub, shared=0.10)
-
-# Get publications strongly co-cited with the target paper
-strong_co_cited = get_strong_co_cited(pub, shared=0.10)
-
-# Get all strongly-related publications
-strong_related = get_strong_citation_relationship(pub, shared=0.10)
+time.sleep(3)  # Adjust as needed
 ```
 
+### Citation Validation
 
-## Troubleshooting
+Publications must have either references OR citations to be considered valid:
 
-- **"No valid publication data found"**: The DOI may not exist in CrossRef/Scopus, or the publication lacks references/citations
-- **API Rate Limit Errors**: Increase the `time.sleep()` value in the main loop
-- **Missing Abstract**: The tool attempts to scrape abstracts from publisher pages when not available in CrossRef metadata
+```python
+def has_citations(pub, service_name):
+    ref_count = pub.reference_count
+    cite_count = pub.citation_count
+    return cite_count > 0 or ref_count > 0
+```
+
+### Publication Factory Pattern
+
+`create_publication()` tries multiple search strategies and data sources automatically:
+
+```python
+pub = create_publication(doi="10.1234/example", eid=None, title="Paper Title")
+```
 
 ## Project Structure
 
 ```
 lit-review-search/
-├── run.py                      # Main entry point
-├── publication.py              # Base publication class
-├── crossref_publication.py     # CrossRef implementation
-├── scopus_publication.py       # Scopus implementation
+├── run.py                          # Main workflow script
+├── publication.py                  # Base publication class
+├── crossref_publication.py         # CrossRef implementation
+├── scopus_publication.py           # Scopus implementation
+├── dblp_publication.py            # DBLP implementation
+├── .env                           # Configuration (not in git)
+├── .env.example                   # Configuration template
 ├── data/
-│   └── {reviewname}/
-│       ├── seed-studies/       # Input seed publication lists
-│       └── related-ids/        # Output related publication IDs
-└── output/
-    └── publications.csv        # Cached publication metadata
+│   └── {REVIEW_NAME}/
+│       ├── seeds.csv              # Input: seed publications
+│       ├── publications.csv       # Output: all publication metadata
+│       └── seed_related_ids.txt   # Output: related publication IDs
+└── README.md
 ```
 
-## License
+## Troubleshooting
 
-[Add your license information here]
+### "OPENCITATIONS_API_KEY not found"
+- Create `.env` file with your OpenCitations API key
+- Get a free key from https://opencitations.net/
+
+### "No valid publication data found"
+- Verify the DOI/EID/title in the input CSV
+- Check that the publication exists in the queried databases
+- Ensure the publication has citation data (some very new papers may not)
+
+### "Error creating CrossRef/Scopus/DBLP publication"
+- Check API keys in `.env`
+- Verify network connectivity
+- Check API rate limits (add longer delays if needed)
+
+### Publications not filtered by year
+- Verify `MIN_YEAR` and `MAX_YEAR` are set in `.env`
+- Check that publications have valid year metadata
+- Publications with unknown years are included by default
 
 ## Contributing
 
 [Add contribution guidelines here]
+
+## License
+
+[Add license information here]
