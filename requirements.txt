@@ -8,6 +8,8 @@ rake-nltk>=1.0.6            # RAKE keyword extraction algorithm
 # using https://gitlab.com/crossref/crossref_commons_py
 crossref_commons>=0.3.0   # CrossRef API client
 
+arxivscraper
+
 # Optional: Topic modeling (requires external HDP tools)
 # numpy>=1.21.0
 # scipy>=1.7.0

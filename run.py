@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-
-
 def has_citations(pub, service_name: str):
     """
     Check if a publication has valid citation data.

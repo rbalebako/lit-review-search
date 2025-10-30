@@ -1,15 +1,10 @@
-from dataclasses import dataclass
-from datetime import datetime
 from typing import Optional, List
-from collections import defaultdict
 from pathlib import Path
 import csv
 import os
 from requests import get
 from dotenv import load_dotenv
-import requests
 import re
-import html
 
 
 # Load environment variables from .env file
@@ -34,16 +29,19 @@ class Publication:
     # Class-level declarations of all attributes
     _doi: Optional[str]
     _eid: Optional[str]
+    _dblp: Optional[str]
     _references: List[str]
     _citations: List[str]
     _abstract: str
     _title: str
     _pub_year: Optional[int] # to keep the method lightweieght, only set and create folder if needed.
+
     
-    def __init__(self, doi: Optional[str] = None, eid: Optional[str] = None):
+    def __init__(self, doi: Optional[str] = None, eid: Optional[str] = None, dblp:  Optional[str] = None):
             
-        self._doi = doi
+        self._doi = doi if doi else None
         self._eid = eid.rjust(10, '0') if eid else None
+        self._dblp = dblp if dblp else None
    
         # Initialize common attributes
         self._references = []
@@ -84,6 +82,22 @@ class Publication:
         return self._eid
     
     @property
+    def dblp(self) -> Optional[str]:
+        return self._dblp
+    
+    @property
+    def abstract(self) -> Optional[str]:
+        return self._abstract
+    
+    @property
+    def title(self) -> Optional[str]:
+        return self._title
+    
+    @property
+    def pub_year(self) -> Optional[str]:
+        return self._pub_year
+    
+    @property
     def reference_count(self) -> int:
         """Get reference count, loading references if not already loaded."""
         if not self._references:
@@ -111,6 +125,10 @@ class Publication:
             self._citations = self.get_citations()
         return self._citations
 
+   
+    @property
+    def absrtact(self) -> Optional[str]:
+        return self._abstract
    
     
     def append_to_csv(self, csv_file_path: str):
@@ -140,12 +158,15 @@ class Publication:
                 
                 # Write publication data
                 writer.writerow({
-                    'id': pub_id,
-                    'title': self._title,
-                    'year': self._pub_year,
-                    'abstract': self._abstract,
+                    'doi': self.doi,
+                    'eid': self.eid,
+                    'dblp': self.dblp,
+                    'title': self.title,
+                    'year': self.pub_year,
                     'citation_count': self.citation_count,
-                    'reference_count': self.reference_count
+                    'reference_count': self.reference_count,
+                    'url': f"https://doi.org/{self.doi}",
+                    'abstract': self.abstract,
                 })
                 
         except Exception as e:
@@ -197,78 +218,7 @@ class Publication:
         list_of_dois  = self._list_from_opencitations_json(field="citing", data=response.json()) 
         return list_of_dois 
     
-    def _scrape_abstract_from_doi(self, doi: str) -> Optional[str]:
-        """
-        Attempt to fetch and extract an abstract from the DOI landing page or arXiv.
-
-        Strategy:
-        - First check if DOI points to arXiv and fetch directly from arXiv API
-        - Otherwise GET https://doi.org/{doi} (follow redirects)
-        - Look for common meta tags and HTML containers:
-            - <meta name="description" content="...">
-            - <meta property="og:description" content="...">
-            - <meta name="citation_abstract" content="...">
-            - <div class="abstract">...</div> (or similar)
-        - Strip HTML tags and unescape entities.
-
-        Returns:
-            str or None: extracted abstract text or None if not found.
-        """
-        return None
     
-        # Check if this is an arXiv DOI
-        arxiv_match = re.search(r'arxiv\.org/abs/(\d+\.\d+)', doi.lower())
-        if arxiv_match:
-            arxiv_id = arxiv_match.group(1)
-            abstract = self._fetch_abstract_from_arxiv(arxiv_id)
-            if abstract:
-                return abstract
-        
-        try:
-            url = f"https://doi.org/{doi}"
-            resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
-            resp.raise_for_status()
-            text = resp.text
-            
-            # Check if redirected to arXiv
-            if 'arxiv.org' in resp.url:
-                arxiv_match = re.search(r'arxiv\.org/abs/(\d+\.\d+)', resp.url)
-                if arxiv_match:
-                    arxiv_id = arxiv_match.group(1)
-                    abstract = self._fetch_abstract_from_arxiv(arxiv_id)
-                    if abstract:
-                        return abstract
-
-            # common meta and container regexes
-            patterns = [
-                r'<meta\s+name=["\']citation_abstract["\']\s+content=["\'](.*?)["\']',
-                r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']',
-                r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']',
-                r'<meta\s+name=["\']dc\.description["\']\s+content=["\'](.*?)["\']',
-                r'(<div[^>]*(?:class|id)=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?</div>)',
-                r'(<section[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?</section>)'
-            ]
-
-            for pat in patterns:
-                m = re.search(pat, text, flags=re.I | re.S)
-                if m:
-                    candidate = m.group(1)
-                    # if whole container matched, strip tags
-                    if candidate:
-                        # remove HTML tags
-                        cleaned = re.sub(r'<[^>]+>', ' ', candidate)
-                        cleaned = html.unescape(cleaned)
-                        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-                        # Heuristic: ignore very short matches
-                        if len(cleaned) >= 50:
-                            return cleaned
-
-            return None
-
-        except Exception as e:
-            # swallow errors, return None to allow fallback
-            print(f"Warning: error scraping DOI {doi}: {e}")
-            return "Abstract not found {e}"
     
     def _fetch_abstract_from_arxiv(self, arxiv_id: str) -> Optional[str]:
         """
@@ -280,34 +230,7 @@ class Publication:
         Returns:
             str or None: Abstract text or None if not found
         """
-        try:
-            import xml.etree.ElementTree as ET
-            
-            # arXiv API endpoint
-            api_url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
-            resp = requests.get(api_url, timeout=15)
-            resp.raise_for_status()
-            
-            # Parse XML response
-            root = ET.fromstring(resp.content)
-            
-            # Find abstract in the entry
-            # arXiv API uses Atom namespace
-            ns = {'atom': 'http://www.w3.org/2005/Atom'}
-            entry = root.find('atom:entry', ns)
-            
-            if entry is not None:
-                summary = entry.find('atom:summary', ns)
-                if summary is not None and summary.text:
-                    # Clean up whitespace
-                    abstract = re.sub(r'\s+', ' ', summary.text).strip()
-                    return abstract
-            
-            return None
-            
-        except Exception as e:
-            print(f"Warning: error fetching arXiv abstract for {arxiv_id}: {e}")
-            return None
+        pass
 
 
 
