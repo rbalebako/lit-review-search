@@ -171,7 +171,7 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
         if validated_publication(pubscopus, eid, "Scopus"):
             return pubscopus       
         else:
-            print(f"** Failed to create Scopus publication for {eid}: {e}")
+            print(f"** Failed to create Scopus publication for {eid}")
     
     print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
     return None
