@@ -50,7 +50,6 @@ class Publication:
         self._doi = doi
         self._eid = eid.rjust(10, '0') if eid else None
    
-
         # Initialize common attributes
         self._references = []
         self._citations = []
