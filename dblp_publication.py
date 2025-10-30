@@ -31,7 +31,7 @@ class DBLPPublication(Publication):
     authors: List[str]
     venue: str
     
-    def __init__(self, dblp_key):
+    def __init__(self, dblp_key: Optional[str] = None):
         """
         Initialize DBLPPublication object.
         
@@ -41,7 +41,7 @@ class DBLPPublication(Publication):
         self.dblp_key = dblp_key
         
         # Call parent init first to initialize _abstract, _title, etc.
-        super().__init__(doi=dblp_key)
+        super().__init__()
         
         # Now fetch and extract metadata directly
         self._fetch_metadata_from_dblp()
@@ -92,17 +92,16 @@ class DBLPPublication(Publication):
                     doi_match = re.search(r'\.org/(.+)$', ee_url)
                     if doi_match:
                         self._doi = doi_match.group(1)  # Get captured group (the DOI)
-                    else:
-                        # If pattern doesn't match, store the full URL as fallback
-                        self._doi = ee_url
-                
+      
                 # DBLP typically doesn't include abstracts
                 # Try to get from DOI if available
+                ''' 
                 if self._doi and not self._abstract:
                     try:
                         self._abstract = self._scrape_abstract_from_doi(self._doi)
                     except Exception as e:
                         print(f"Warning: Could not fetch abstract for {self.dblp_key}: {e}")
+                '''
             
         except Exception as e:
             print(f"Error parsing DBLP XML for {self.dblp_key}: {e}")
@@ -140,16 +139,7 @@ class DBLPPublication(Publication):
         """Get publication year."""
         return self._pub_year
     
-    def get_citation_count(self):
-        """
-        Get citation count for this publication.
-        
-        Note: DBLP doesn't provide citation counts directly.
-        
-        Returns:
-            int: Always returns 0 (DBLP limitation)
-        """
-        return 0
+
     
     @staticmethod
     def search_by_title(title: str, max_results: int = 10):

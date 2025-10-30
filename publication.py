@@ -41,8 +41,6 @@ class Publication:
     _pub_year: Optional[int] # to keep the method lightweieght, only set and create folder if needed.
     
     def __init__(self, doi: Optional[str] = None, eid: Optional[str] = None):
-        if not doi and not eid:
-            raise ValueError("Must provide either DOI or EID")
             
         self._doi = doi
         self._eid = eid.rjust(10, '0') if eid else None
@@ -53,8 +51,7 @@ class Publication:
         self._abstract = ''
         self._title = ''
         self._pub_year = None
-        
-    
+
     
     def create_pub_directory(self, data_folder: str) -> str:
         """Create and return path to publication directory using EID or DOI.

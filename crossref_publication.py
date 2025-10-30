@@ -81,12 +81,6 @@ class CrossRefPublication(Publication):
         date_parts = self.metadata.get('published-print', {}).get('date-parts', [[None]])[0]
         return date_parts[0] if date_parts else None
 
-    @property
-    def reference_count(self):
-        return len(self.references)
-
-    def get_citation_count(self):
-        return self.metadata.get('is-referenced-by-count', 0)
 
     def extract_metadata(self):
         """

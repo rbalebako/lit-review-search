@@ -38,36 +38,72 @@ def has_citations(pub, service_name: str):
     return False
 
 
-def find_publication_by_id(id):
+def find_publication_by_doi(doi):
     """
-    Search for a publication by identifier in DBLP or Scopus.
-    
-    Attempts to create a publication object using the given identifier,
-    trying DBLP first, then Scopus as fallback.
+    Search for a publication by DOI using CrossRef.
     
     Args:
-        id (str): Publication identifier (DOI, DBLP key, or Scopus EID)
+        doi (str): DOI identifier
         
     Returns:
-        Publication: DBLPPublication or ScopusPublication object if found, None otherwise
+        CrossRefPublication: CrossRefPublication object if found, None otherwise
     """
-    if not id:
+    if not doi:
         return None
         
     try:
-        pub = DBLPPublication(id)  
-        if pub:
-            return pub    
-    except Exception as e:
-        print(f"** DBLP failed for ID {id}, trying Scopus: {e}")
-    
-    try:
-        pub = ScopusPublication(id)
+        pub = CrossRefPublication(doi)
         if pub:
             return pub
     except Exception as e:
-        print(f"** Error creating Scopus publication for ID {id}: {e}")
+        print(f"** Error creating CrossRef publication for DOI {doi}: {e}")
     
+    return None
+
+
+def find_publication_by_eid(eid):
+    """
+    Search for a publication by EID using Scopus.
+    
+    Args:
+        eid (str): Scopus EID identifier
+        
+    Returns:
+        ScopusPublication: ScopusPublication object if found, None otherwise
+    """
+    if not eid:
+        return None
+        
+    try:
+        pub = ScopusPublication(eid)
+        if pub:
+            return pub
+    except Exception as e:
+        print(f"** Error creating Scopus publication for EID {eid}: {e}")
+    
+    return None
+
+
+def find_publication_by_dblp(dblp_key):
+    """
+    Search for a publication by DBLP key.
+    
+    Args:
+        dblp_key (str): DBLP key identifier
+        
+    Returns:
+        DBLPPublication: DBLPPublication object if found, None otherwise
+    """
+    if not dblp_key:
+        return None
+        
+    try:
+        pub = DBLPPublication(dblp_key=dblp_key)  
+        if pub:
+            return pub    
+    except Exception as e:
+        print(f"** DBLP failed for key {dblp_key}: {e}")
+
     return None
 
 
@@ -122,12 +158,14 @@ def create_publication(doi=None, eid=None, title=None):
     Returns:
         Publication: Publication object if found, None otherwise
     """
+    dblp = None
     
     # Define search strategies in order of priority
     search_strategies = [
         ('title', title, find_publication_by_title),
-        ('doi', doi, find_publication_by_id),
-        ('eid', eid, find_publication_by_id)
+        ('doi', doi, find_publication_by_doi),
+        ('eid', eid, find_publication_by_eid),
+        ('dblp', dblp, find_publication_by_dblp)
     ]
 
     for name, value, search_func in search_strategies:
@@ -148,6 +186,10 @@ def create_publication(doi=None, eid=None, title=None):
                 doi = pub.doi
             if not title and pub.title:
                 title = pub.title
+            if not dblp and isinstance(pub, DBLPPublication) and hasattr(pub, 'dblp_key'):
+                dblp = pub.dblp_key
+            if not eid and pub.eid:
+                eid = pub.eid
     
     print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
     return None
@@ -183,7 +225,7 @@ def cache_pub_metadata(pub, output_file):
         print(f"    Title: {pub.title}")
         print(f"    Year: {pub.pub_year}")
         print(f"    References: {pub.reference_count}")
-        print(f"    Citation count: {pub.get_citation_count}")
+        print(f"    Citation count: {pub.citation_count}")
     return pub
 
 
@@ -271,7 +313,7 @@ def main():
 
     all_related_ids = set()
     for seed_doi, seed_eid, seed_title in seeds:
-        pub = create_publication(pubs_output_file, doi=seed_doi, eid=seed_eid, title=seed_title)
+        pub = create_publication(doi=seed_doi, eid=seed_eid, title=seed_title)
 
         # Create a unique list of cited and referenced publications for this seed
         if pub:
@@ -290,7 +332,17 @@ def main():
     save_related_ids_csv(all_related_ids, related_output_file)
 
     for id in all_related_ids:
-        pub = find_publication_by_id(id)
+        # Determine if id is a DOI or EID and call appropriate function
+        if id.startswith('doi:'):
+            pub = find_publication_by_doi(id.replace('doi:', ''))
+        elif id.startswith('2-s2.0-'):
+            pub = find_publication_by_eid(id)
+        else:
+            # Try DOI first, then EID
+            pub = find_publication_by_doi(id)
+            if not pub:
+                pub = find_publication_by_eid(id)
+        
         if pub:
             cache_pub_metadata(pub, pubs_output_file)
         

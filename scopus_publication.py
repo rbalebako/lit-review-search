@@ -9,6 +9,7 @@ import os, json, urllib.request, urllib.error, time, xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 from publication import Publication 
 
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -40,6 +41,7 @@ class ScopusPublication(Publication):
         # Initialize Scopus specific attributes
         self.reference_xml = None
         # Note: citations_folder removed since no local storage is used
+        self._pub_directory =  os.getenv('REVIEW_NAME', 'firsttry')
         
         # Get reference data
         reference_file = os.path.join(self._pub_directory, 'references.xml')
@@ -81,7 +83,7 @@ class ScopusPublication(Publication):
 
     def download_reference_file(self, reference_file):
         try:
-            abstract_url = 'https://api.elsevier.com/content/abstract/scopus_id/{}?apiKey={}'.format(self.eid_, API_KEY)
+            abstract_url = 'https://api.elsevier.com/content/abstract/scopus_id/{}?apiKey={}'.format(self.eid, API_KEY)
             
             #change ET to lxml
             xml_file = urllib.request.urlopen(abstract_url, timeout = 1000)
@@ -94,7 +96,7 @@ class ScopusPublication(Publication):
                 f.write(ET.tostring(xml))
 
         except Exception as e:
-            print('Error getting reference file: ' + self.eid_)
+            print('Error getting reference file: ' + self.eid)
             print(e)
         
         time.sleep(5)
@@ -159,14 +161,14 @@ class ScopusPublication(Publication):
                 page_count = 0
                 while True:
                     json_file = urllib.request.urlopen('https://api.elsevier.com/content/search/scopus?' + \
-                        'query=refeid(2-s2.0-{})&apiKey={}&date={}&count=200&start={}'.format(self.eid_, API_KEY, year, page_count * 200))
+                        'query=refeid(2-s2.0-{})&apiKey={}&date={}&count=200&start={}'.format(self.eid, API_KEY, year, page_count * 200))
                     data = json_file.read()
 
                     json_data = json.loads(data)
                     results = int(json_data['search-results']['opensearch:totalResults'])
 
                     if page_count == 0 and results > 5000:
-                        print('More than 5000: ' + self.eid_)
+                        print('More than 5000: ' + self.eid)
                         print('Year: ' + str(year))
 
                     if results == 0 or 'entry' not in json_data['search-results']:
@@ -185,7 +187,7 @@ class ScopusPublication(Publication):
 
                 year += 1
         except urllib.error.HTTPError:
-            print('Error getting citations: ' + self.eid_)
+            print('Error getting citations: ' + self.eid)
 
         # second delay for each request to Scopus
         time.sleep(5)
