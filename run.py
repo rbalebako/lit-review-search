@@ -11,32 +11,26 @@ load_dotenv()
 
 
 
-def has_citations(pub,  service_name: str):
+def has_citations(pub, service_name: str):
     """
-
-    Validate publication data for citation analysis.
-
-    This helper function checks if a publication object contains valid citation data
-    by verifying the presence of both references and citations.
-
+    Check if a publication has valid citation data.
+    
+    Validates that a publication object has been successfully loaded with metadata
+    and contains at least one citation. References are optional.
+    
     Args:
-        pub: Publication object to validate. Should have 'metadata', 'references', 
-             and 'citations' attributes.
-        service_name (str): Name of the service providing the publication data 
-                           (used for logging purposes).
-
-    Returns:
-        object or None: Returns the publication object if it has valid citation data
-                       (both references and citations present with count > 0), 
-                       otherwise returns None.
+        pub: Publication object to validate
+        service_name (str): Name of the data source (for logging)
         
+    Returns:
+        bool: True if publication has metadata and at least one citation, False otherwise
     """
     try:
         if hasattr(pub, 'metadata') and pub.metadata:  # Check metadata if exists
             ref_count =  pub.reference_count
             cite_count = pub.citation_count
             # Does citation count need to be greater than 0?  What if no one has cited it
-            if cite_count > 0:
+            if cite_count > 0 or ref_count>0:
                 #print(f"Using {service_name}  (refs: {ref_count}, cites: {cite_count})")
                 return True
             print(f"{service_name} missing citations/references for {pub.title}")
@@ -47,14 +41,17 @@ def has_citations(pub,  service_name: str):
 
 def find_publication_by_id(data_folder, id):
     """
-    Search for a publication by id in DBLP and Scopus.
+    Search for a publication by identifier in DBLP or Scopus.
+    
+    Attempts to create a publication object using the given identifier,
+    trying DBLP first, then Scopus as fallback.
     
     Args:
-        data_folder (str): Folder for storing publication data
-        id (str): ID identifier to search for
+        data_folder (str): Directory for storing publication data
+        id (str): Publication identifier (DOI, DBLP key, or Scopus EID)
         
     Returns:
-        Publication: ScopusPublication object if found and has citations, None otherwise
+        Publication: DBLPPublication or ScopusPublication object if found, None otherwise
     """
     if not id:
         return None
@@ -74,7 +71,20 @@ def find_publication_by_id(data_folder, id):
 
 
 def find_publication_by_title(data_folder, title):
-      # Try DBLP and Scopus first if title is provided
+    """
+    Search for a publication by title across multiple data sources.
+    
+    Searches DBLP and Scopus APIs for publications matching the given title.
+    Returns the first result that has valid citation data.
+    
+    Args:
+        data_folder (str): Directory for storing publication data
+        title (str): Publication title to search for
+        
+    Returns:
+        Publication: First matching publication with citations, or None if not found
+    """
+    # Try DBLP and Scopus first if title is provided
     if title:
         print(f"** Searching DBLP for: {title}")
         dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
@@ -103,30 +113,43 @@ def find_publication_by_title(data_folder, title):
 
 def create_publication(data_folder, doi=None, eid=None, title=None):
     """
-    Factory function that tries to create publications in order based on the data available
-    TODO(maybe we can check the format of the id to see which one it is?)
+    Factory function to create a publication object from available identifiers.
+    
+    Attempts to locate and create a publication object using the provided identifiers,
+    trying different data sources and fallback strategies. Prioritizes finding publications
+    with valid citation data.
+    
+    Search strategy:
+    1. If title provided: Search by title in DBLP and Scopus
+    2. If DOI provided: Search by DOI in DBLP, CrossRef, or Scopus
+    3. If EID provided: Search by EID in Scopus
     
     Args:
-        data_folder (str): Folder for storing publication data
+        data_folder (str): Directory for storing publication data
         doi (str, optional): DOI identifier
-        eid (str, optional): EID identifier (Scopus)
-        title (str, optional): Publication title for DBLP search
+        eid (str, optional): Scopus EID identifier
+        title (str, optional): Publication title
         
     Returns:
-        Publication: Publication object or None if creation fails
+        Publication: Publication object if found, None otherwise
     """
-  
-    while (!has_citations(pub)):
-        if doi:
-            pub = find_publication_by_id(data_folder, doi)
-            title = pub.title
-        if eid:
-            pub = find_publication_by_id(data_folder, eid)
-            title = pub.title
-        if title
-            pub_by_eid = find_publication_by_title(data_folder, title )    
-            doi = pub.doi
-        
+    # TODO I need to test this and the logic here
+    if title:
+        pub_by_eid = find_publication_by_title(data_folder, title )  
+        if (has_citations(pub)):
+            return pub  
+        doi = pub.doi if pub.doi else None
+    if doi:
+        pub = find_publication_by_id(data_folder, doi)
+        if (has_citations(pub)):
+            return pub
+        title = pub.title if pub.title else None
+    if eid:
+        pub = find_publication_by_id(data_folder, eid)
+        if (has_citations(pub)):
+            return pub
+        title = pub.title if pub.title else None
+
     if not pub:
         print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
         return None
@@ -136,22 +159,23 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
 
     return pub
 
-def cache_pub_metadata(pub, output_file, title=None):
+def cache_pub_metadata(pub, output_file):
     """
-    Given a seed publication identifiers, fetch and cache its metadata.
-    Side effect: saves the metadata in the output_file
-
+    Save publication metadata to a CSV file.
+    
+    Appends the publication's metadata (title, year, abstract, citation counts)
+    to the specified CSV file. Creates the file if it doesn't exist.
+    
     Args:
-        seed_doi (str): Seed publication DOI
-        seed_eid (str): Seed publication EID
-        output_file (str): Where to save information about the seed
-        title (str, optional): Publication title for reference
-
+        pub: Publication object containing metadata to save
+        output_file (str): Path to the output CSV file
+        title (str, optional): Title for reference (unused, kept for compatibility)
+        
     Returns:
-        Publication: Publication object or None
+        Publication: The same publication object passed in
     """
 
-    print(f"  Processing DOI: {seed_doi}, EID: {seed_eid}")
+    print(f"  Processing DOI: {pub.doi}, title: {pub.titled}")
         
     # Create file if it doesn't exist
     if not os.path.exists(output_file):
@@ -166,20 +190,23 @@ def cache_pub_metadata(pub, output_file, title=None):
         print(f"    Title: {pub.title}")
         print(f"    Year: {pub.pub_year}")
         print(f"    References: {pub.reference_count}")
-        print(f"    Citation count: {pub.get_citation_count()}")
+        print(f"    Citation count: {pub.get_citation_count}")
     return pub
 
 
 
 def read_seed_csv(input_file):
     """
-    Read seed publication IDs from a CSV file.
+    Read seed publication identifiers from a CSV file.
+    
+    Parses a CSV file containing seed publications for a literature review.
+    Expected columns: DOI, EID, Title (at least one must be present per row).
     
     Args:
         input_file (str): Path to the CSV file containing seed publication IDs.
         
     Returns:
-        list: List of tuples (doi, eid, title) with seed publication data.
+        list: List of tuples (doi, eid, title) for each seed publication
     """
     seeds = []
     print(f'Getting list of seed studies from {input_file}...')
@@ -203,11 +230,13 @@ def read_seed_csv(input_file):
 
 def save_related_ids_csv(all_related_ids, output_file):
     """
-    Save related publication IDs to a text file.
+    Save a list of publication identifiers to a text file.
+    
+    Writes each identifier on a separate line. Creates the file if it doesn't exist.
     
     Args:
-        all_related_ids (set): Set of related publication IDs to save.
-        output_file (str): Full path where the output file will be saved.
+        all_related_ids (set): Set of publication identifiers (DOIs/EIDs)
+        output_file (str): Path to the output text file
     """
     
     # Create file if it doesn't exist
@@ -222,7 +251,17 @@ def save_related_ids_csv(all_related_ids, output_file):
 
 def main():
     """
-    Main entry point using Crossref or Scopus to build citations list from seed DOI list
+    Main workflow for building citation networks from seed publications.
+    
+    Process:
+    1. Load seed publications from CSV file
+    2. For each seed, fetch publication data and extract references/citations
+    3. Save seed publication metadata to CSV
+    4. Collect all unique related publication IDs
+    5. Save related IDs to text file
+    6. Fetch and cache metadata for all related publications
+    
+    Configuration is loaded from environment variables (MIN_YEAR, MAX_YEAR, REVIEW_NAME).
     """
     # Load configuration from environment variables
     min_year = int(os.getenv('MIN_YEAR', '2022'))
@@ -257,7 +296,7 @@ def main():
     # Save ids of pubs related to the seed
     save_related_ids_csv(all_related_ids, related_output_file)
 
-    for (id in all_related_ids):
+    for id in all_related_ids:
         pub = find_publication_by_id(id)
         if pub:
             cache_pub_metadata(pub)
