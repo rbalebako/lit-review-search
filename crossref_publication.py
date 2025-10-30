@@ -25,23 +25,49 @@ RATE_LIMIT_DELAY = 1.0  # Conservative 1 second between requests
 class CrossRefPublication(Publication):
     """Represents a publication from CrossRef API with citation network data."""
 
-    def __init__(self, data_folder, doi, download=True):
+    def __init__(self, data_folder, doi):
+        # Fetch metadata during initialization
+        self.metadata = self._fetch_metadata_from_crossref()
+  
+        # Extract title, year, abstract from metadata
+        self._extract_basic_metadata()
+        
+        # Call parent init
         super().__init__(data_folder, doi=doi)
-        self._metadata = None  # Declare Crossref-specific attribute
 
-        if download: #TODO check the logic we probably don't want this
-            self.metadata  # Trigger metadata download
 
-    @property
-    def metadata(self):
-        if self._metadata is None:
-            try:
-                self.extract_metadata()
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching metadata from crossref_commons for {self._doi}: {e}")
-                self._metadata = {}
-        return self._metadata
+    def _fetch_metadata_from_crossref(self):
+        """
+        Fetch metadata from CrossRef API.
+        
+        Returns:
+            dict: Publication metadata from CrossRef, or empty dict if fetch fails
+        """
+        try:
+            return crossref_commons.retrieval.get_publication_as_json(self._doi)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching metadata from crossref_commons for {self._doi}: {e}")
+            return {}
     
+    def _extract_basic_metadata(self):
+        """Extract title, abstract, and publication year from metadata."""
+        if not self.metadata:
+            return
+
+        # Extract title
+        titles = self.metadata.get('title', [])
+        if titles:
+            self._title = titles[0]
+
+        # Extract abstract (if available)
+        self._abstract = self.metadata.get('abstract', '') or ''
+
+        # Extract publication year
+        pub_date = self.metadata.get('published', {}) or self.metadata.get('created', {})
+        if pub_date and 'date-parts' in pub_date:
+            date_parts = pub_date['date-parts'][0]
+            if date_parts:
+                self._pub_year = date_parts[0]
    
     @property
     def title(self):
@@ -62,29 +88,11 @@ class CrossRefPublication(Publication):
     def extract_metadata(self):
         """
         Extract title, abstract, and publication year from metadata.
-        Also populates references and citations from OpenCitations.
-        """
-        if not self._metadata:           
-            self._metadata = crossref_commons.retrieval.get_publication_as_json(self._doi)  # Use parent's _doi
-
-        # Extract title
-        titles = self._metadata.get('title', [])
-        if titles:
-            self._title = titles[0]
-
-        # Extract abstract (if available)
-        self._abstract = self._metadata.get('abstract', '') or ''
-
-        # Extract publication year
-        pub_date = self._metadata.get('published', {}) or self._metadata.get('created', {})
-        if pub_date and 'date-parts' in pub_date:
-            date_parts = pub_date['date-parts'][0]
-            if date_parts:
-                self._pub_year = date_parts[0]
         
-        # Do not populate references or citations unless explicitely requested.
-        # this is to reduce API calls
-
+        Note: This method is kept for backward compatibility with search methods.
+        For new code, metadata extraction happens in __init__.
+        """
+        self._extract_basic_metadata()
 
     @staticmethod
     def search_by_title(title, data_folder):
@@ -116,8 +124,8 @@ class CrossRefPublication(Publication):
                 doi = item.get('DOI')
                 if doi:
                     pub = CrossRefPublication(data_folder, doi, download=False)
-                    pub._metadata = item
-                    pub.extract_metadata()
+                    pub.metadata = item  # Set metadata directly
+                    pub._extract_basic_metadata()  # Extract fields
                     results.append(pub)
 
             time.sleep(RATE_LIMIT_DELAY)
@@ -157,9 +165,8 @@ class CrossRefPublication(Publication):
                 doi = item.get('DOI')
                 if doi:
                     pub = CrossRefPublication(data_folder, doi, download=False)
-                    pub._metadata = item
-                    pub.extract_metadata()
-                    pub.extract_references()
+                    pub.metadata = item  # Set metadata directly
+                    pub._extract_basic_metadata()  # Extract fields
                     results.append(pub)
 
             time.sleep(RATE_LIMIT_DELAY)
@@ -169,4 +176,3 @@ class CrossRefPublication(Publication):
             print(f'Error searching for author "{author_name}": {e}')
             return []
 
- 

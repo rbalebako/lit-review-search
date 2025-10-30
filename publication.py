@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Optional, List
 from collections import defaultdict
 from pathlib import Path
-from abc import abstractmethod
 import csv
 import os
 from requests import get
@@ -41,7 +40,7 @@ class Publication:
     _citations: List[str]
     _abstract: str
     _title: str
-    _pub_year: Optional[int]
+    _pub_year: Optional[int] # to keep the method lightweieght, only set and create folder if needed.
     
     def __init__(self, data_folder: str, doi: Optional[str] = None, eid: Optional[str] = None):
         if not doi and not eid:
@@ -57,7 +56,9 @@ class Publication:
         self._title = ''
         self._pub_year = None
         self._data_folder = data_folder
-        self._pub_directory = None  # Will be set in create_pub_directory if it is called.  Otherwise, keep this lightweight
+        self._pub_directory = None
+        
+    
     
     def create_pub_directory(self, data_folder: str) -> str:
         """Create and return path to publication directory using EID or DOI.
@@ -187,6 +188,7 @@ class Publication:
 
         all the outgoing references to other cited works appearing in the reference list of the bibliographic entity identified 
         """
+        # TODO the id being used here is not the doi. 
         api_call = f"https://api.opencitations.net/index/v2/references/doi:{self._doi}?format=json"
         response = get(api_call, headers=HTTP_HEADERS)
         list_of_dois = self._list_from_opencitations_json(field="cited", data=response.json())

@@ -49,6 +49,7 @@ class ScopusPublication(Publication):
         if not os.path.exists(self.citations_folder):
             self.download_citation_files()
         self.get_citation_eids()
+    
 
     def get_abstract(self):
         self._abstract = ''  # Use parent's _abstract

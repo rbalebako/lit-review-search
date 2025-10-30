@@ -90,24 +90,16 @@ def find_publication_by_title(data_folder, title):
         dblp_results = DBLPPublication.search_by_title(title, data_folder, max_results=1)
         if dblp_results:
             pub_dblp = dblp_results[0]
-            # Trigger metadata download
-            pub_dblp.metadata
-            # Extract DOI and EID from DBLP if not already provided
-            doi = pub_dblp.doi if doi is None else doi
-            eid = pub_dblp.eid if eid is None else eid
-            if pub_dblp.title and title.lower() in pub_dblp.title.lower():
-                print(f"Found in DBLP: {pub_dblp.dblp_key}")
-                if has_citations(pub_dblp, "DBLP"):
-                    return pub_dblp   
-                else:
-                    print(f"** DBLP search did not return references for '{title}'")
+
+            print(f"Found in DBLP: {pub_dblp.dblp_key}")
+            return pub_dblp              
         
         print(f"** Searching Scopus for: {title}")
         pub_scopus = ScopusPublication.search_by_title(title, data_folder)
         if pub_scopus and has_citations(pub_scopus, "Scopus"):
             return pub_scopus       
         else:
-            print(f"** Failed to create Scopus publication for title: {title}")
+            print(f"** Failed to create Scopus or DBLP publication for title: {title}")
 
     
 
@@ -133,31 +125,35 @@ def create_publication(data_folder, doi=None, eid=None, title=None):
     Returns:
         Publication: Publication object if found, None otherwise
     """
-    # TODO I need to test this and the logic here
-    if title:
-        pub_by_eid = find_publication_by_title(data_folder, title )  
-        if (has_citations(pub)):
-            return pub  
-        doi = pub.doi if pub.doi else None
-    if doi:
-        pub = find_publication_by_id(data_folder, doi)
-        if (has_citations(pub)):
-            return pub
-        title = pub.title if pub.title else None
-    if eid:
-        pub = find_publication_by_id(data_folder, eid)
-        if (has_citations(pub)):
-            return pub
-        title = pub.title if pub.title else None
-
-    if not pub:
-        print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
-        return None
     
-    else:
-       pub.has_citations()
+    # Define search strategies in order of priority
+    search_strategies = [
+        ('title', title, find_publication_by_title),
+        ('doi', doi, find_publication_by_id),
+        ('eid', eid, find_publication_by_id)
+    ]
 
-    return pub
+    for name, value, search_func in search_strategies:
+        if not value:
+            continue
+
+        print(f"** Searching by {name}: {value}")
+        pub = search_func(data_folder, value)
+
+        if pub and has_citations(pub, f"search_by_{name}"):
+            print(f"** Found valid publication by {name}: {value}")
+            return pub
+        
+        # If a publication was found but had no citations,
+        # try to use its identifiers for the next search strategies.
+        if pub:
+            if not doi and pub.doi:
+                doi = pub.doi
+            if not title and pub.title:
+                title = pub.title
+    
+    print(f"** No valid publication data found for DOI: {doi}, EID: {eid}, Title: {title}")
+    return None
 
 def cache_pub_metadata(pub, output_file):
     """

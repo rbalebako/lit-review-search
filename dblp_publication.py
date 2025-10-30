@@ -25,63 +25,34 @@ RATE_LIMIT_DELAY = 1.0  # Conservative rate limiting
 class DBLPPublication(Publication):
     """Represents a publication from DBLP API with citation network data."""
     
-    def __init__(self, data_folder, dblp_key, download=True):
+    # DBLP-specific attribute declarations
+    type: str
+    key: str
+    authors: List[str]
+    venue: str
+    
+    def __init__(self, data_folder, dblp_key):
         """
         Initialize DBLPPublication object.
         
         Args:
             data_folder (str): Path to folder for storing cached data
             dblp_key (str): DBLP key of the publication (e.g., "conf/icse/SmithJ20")
-            download (bool): If True, download data from API. If False, only load cached data.
         """
-        # DBLP uses keys instead of DOIs, store in DOI field for compatibility
-        super().__init__(data_folder, doi=dblp_key)
-        self._metadata = None
         self.dblp_key = dblp_key
         
-        if download:
-            self.metadata  # Trigger metadata download
-    
-    @property
-    def metadata(self):
-        """
-        Lazy-loaded access to DBLP metadata.
+        # Call parent init first to initialize _abstract, _title, etc.
+        super().__init__(data_folder, doi=dblp_key)
         
-        Fetches metadata from DBLP API on first access and caches the result.
-        Extracts metadata fields using extract_metadata() method.
-        
-        Returns:
-            dict: Publication metadata from DBLP, or empty dict if fetch fails.
-        """
-        if self._metadata is None:
-            try:
-                self._metadata = self._fetch_metadata_from_dblp()
-                self.extract_metadata()
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching metadata from DBLP for {self.dblp_key}: {e}")
-                self._metadata = {}
-        return self._metadata
+        # Now fetch and extract metadata directly
+        self._fetch_metadata_from_dblp()
     
     def _fetch_metadata_from_dblp(self):
         """
-        Fetch publication metadata from DBLP API.
+        Fetch publication metadata from DBLP API and populate instance variables.
         
-        Retrieves the XML record for the publication from DBLP and parses
-        common fields like title, year, authors, venue, DOI, etc.
-        
-        Returns:
-            dict: Publication metadata from DBLP containing fields:
-                  - type: Publication type (article, inproceedings, etc.)
-                  - key: DBLP key
-                  - title: Publication title
-                  - year: Publication year
-                  - authors: List of author names
-                  - venue: Journal or conference name
-                  - doi: DOI (from 'ee' field)
-                  - url: DBLP URL
-                  - pages: Page range
-                  - volume: Volume number
-                  - number: Issue number
+        Retrieves the XML record for the publication from DBLP and directly assigns
+        fields like type, key, title, year, authors, venue, DOI to instance variables.
         """
         try:
             # Construct API URL for specific record
@@ -92,22 +63,28 @@ class DBLPPublication(Publication):
             # Parse XML response
             root = ET.fromstring(response.content)
             
-            # Extract metadata from XML
-            metadata = {}
-            
             # Find the publication element (could be article, inproceedings, etc.)
             pub_elem = root.find('.//*[@key]')
             if pub_elem is not None:
-                metadata['type'] = pub_elem.tag
-                metadata['key'] = pub_elem.get('key')
+                # Extract DBLP-specific fields directly to instance variables
+                self.type = pub_elem.tag
+                self.key = pub_elem.get('key')
                 
-                # Extract common fields
-                metadata['title'] = self._get_text(pub_elem, 'title')
-                metadata['year'] = self._get_text(pub_elem, 'year')
-                metadata['authors'] = [self._get_text(author, '.') 
-                                      for author in pub_elem.findall('author')]
-                metadata['venue'] = (self._get_text(pub_elem, 'journal') or 
-                                   self._get_text(pub_elem, 'booktitle'))
+                # Extract title
+                self._title = self._get_text(pub_elem, 'title') or ''
+                
+                # Extract year
+                year_str = self._get_text(pub_elem, 'year')
+                if year_str and year_str.isdigit():
+                    self._pub_year = int(year_str)
+                
+                # Extract authors
+                self.authors = [self._get_text(author, '.') 
+                               for author in pub_elem.findall('author')]
+                
+                # Extract venue
+                self.venue = (self._get_text(pub_elem, 'journal') or 
+                             self._get_text(pub_elem, 'booktitle') or '')
                 
                 # Extract DOI from 'ee' field which contains URL like 'https://doi.org/10.1145/3576915.3623157'
                 ee_url = self._get_text(pub_elem, 'ee')
@@ -115,18 +92,26 @@ class DBLPPublication(Publication):
                     # Extract just the DOI part after '.org/'
                     doi_match = re.search(r'\.org/(.+)$', ee_url)
                     if doi_match:
-                        metadata['doi'] = doi_match.group(1)  # Get captured group (the DOI)
-                        self._doi = metadata['doi']
+                        self._doi = doi_match.group(1)  # Get captured group (the DOI)
                     else:
                         # If pattern doesn't match, store the full URL as fallback
-                        metadata['doi'] = ee_url
                         self._doi = ee_url
-
-            return metadata
+                
+                # DBLP typically doesn't include abstracts
+                # Try to get from DOI if available
+                if self._doi and not self._abstract:
+                    try:
+                        self._abstract = self._scrape_abstract_from_doi(self._doi)
+                    except Exception as e:
+                        print(f"Warning: Could not fetch abstract for {self.dblp_key}: {e}")
             
         except Exception as e:
             print(f"Error parsing DBLP XML for {self.dblp_key}: {e}")
-            return {}
+            # Initialize empty values on error
+            self.type = ''
+            self.key = ''
+            self.authors = []
+            self.venue = ''
     
     def _get_text(self, element, tag):
         """
@@ -144,57 +129,16 @@ class DBLPPublication(Publication):
         child = element.find(tag)
         return child.text if child is not None else None
     
-    def extract_metadata(self):
-        """
-        Extract title, year, and other fields from DBLP metadata.
-        
-        Populates internal fields (_title, _pub_year, _abstract) from
-        the metadata dictionary. Attempts to fetch abstract from DOI
-        if available, since DBLP typically doesn't include abstracts.
-        Also populates references and citations if available.
-        """
-        if not self._metadata:
-            return
-        
-        # Extract title
-        self._title = self._metadata.get('title', '')
-        
-        # Extract year
-        year_str = self._metadata.get('year', '')
-        if year_str and year_str.isdigit():
-            self._pub_year = int(year_str)
-        
-        # Do not populate references or citations unless explicitely requested.
-        # this is to reduce API calls
+
 
     @property
     def title(self):
-        """
-        Get publication title.
-        
-        Lazily loads from metadata if not already set.
-        
-        Returns:
-            str: Publication title
-        """
-        if not self._title and self.metadata:
-            self._title = self.metadata.get('title', '')
+        """Get publication title."""
         return self._title
     
     @property
     def pub_year(self):
-        """
-        Get publication year.
-        
-        Lazily loads from metadata if not already set.
-        
-        Returns:
-            int or None: Publication year as integer, or None if not available
-        """
-        if not self._pub_year and self.metadata:
-            year_str = self.metadata.get('year', '')
-            if year_str and year_str.isdigit():
-                self._pub_year = int(year_str)
+        """Get publication year."""
         return self._pub_year
     
     def get_citation_count(self):
@@ -245,7 +189,7 @@ class DBLPPublication(Publication):
                 if info is not None:
                     key = info.find('key')
                     if key is not None and key.text:
-                        pub = DBLPPublication(data_folder, key.text, download=False)
+                        pub = DBLPPublication(data_folder, key.text)
                         results.append(pub)
             
             return results
