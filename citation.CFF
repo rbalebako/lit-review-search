@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below, and please also cite the original paper it is based on (listed under references)."
+title: "lit-review-search: citation-network literature review search (CrossRef, Scopus, DBLP)"
+type: software
+authors:
+  - family-names: Balebako
+    given-names: Rebecca
+    affiliation: "Zurich University of Applied Sciences (ZHAW)"
+repository-code: "https://github.com/rbalebako/lit-review-search"
+license: GPL-3.0-only
+keywords:
+  - systematic literature review
+  - citation network
+  - bibliometrics
+  - CrossRef
+  - Scopus
+  - DBLP
+references:
+  - type: conference-paper
+    title: "Testing a Citation and Text-Based Framework for Retrieving Publications for Literature Reviews"
+    authors:
+      - family-names: Sarol
+        given-names: Maria Janina
+      - family-names: Liu
+        given-names: Linxi
+      - family-names: Schneider
+        given-names: Jodi
+    collection-title: "Proceedings of the 7th International Workshop on Bibliometric-enhanced Information Retrieval (BIR 2018)"
+    publisher:
+      name: "CEUR-WS.org"
+    volume: 2080
+    start: 22
+    end: 33
+    year: 2018
+    url: "http://ceur-ws.org/Vol-2080/paper3.pdf"
+  - type: software
+    title: "lit-review-search (original implementation)"
+    authors:
+      - family-names: Sarol
+        given-names: Maria Janina
+    repository-code: "https://github.com/janinaj/lit-review-search"
