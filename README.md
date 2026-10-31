@@ -2,6 +2,9 @@
 
 A unified workflow for conducting systematic literature reviews using CrossRef, Scopus, and DBLP APIs to build citation networks from seed publications.
 
+# Origin and Credit 
+This project began as a fork of janinaj/lit-review-search, the code for Sarol, Liu & Schneider (2018). It has since been rewritten for Python 3 with multi-source retrieval (CrossRef, Scopus, DBLP), year filtering and CSV export.
+
 ## Overview
 
 This tool automatically:
